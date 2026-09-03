@@ -403,3 +403,55 @@ before it goes in:
 4. **Author name normalization.** "Dan Simmons" vs "Simmons, Dan" vs "SIMMONS,
    DAN" will fragment the author filter. Needs at least a normalization pass;
    full author identity resolution is a rabbit hole.
+
+## 18. Verification status (as of 2026-09-03)
+
+What has actually been exercised, and what has not. Kept here because "it's
+built" and "it's proven" are different claims.
+
+### Verified
+
+- All four format parsers, against generated fixtures covering the happy path
+  plus a corrupt EPUB, an empty PDF, a DRM'd MOBI, a 1×1 spacer cover, and a
+  file with no embedded metadata at all.
+- Live Open Library enrichment: ISBN lookup, search with confidence gating,
+  response caching. A rescan of an unchanged library makes **zero** network
+  requests (measured).
+- Content identity: a file moved and renamed to `gibberish_final(2).mobi` keeps
+  its row, its cover, and its manual edits. No duplicate created.
+- Overrides survive a forced rescan, including offline.
+- Downloads are byte-identical to source, with Range support.
+- LAN binding (`--host 0.0.0.0`), reachable from another address on the network.
+- **Docker**: image builds, container reports healthy, full scan runs on Linux,
+  and the read-only mount is enforced — an explicit `rm` of a book inside the
+  container fails with `Read-only file system`.
+- 65 tests, run on macOS.
+
+### Not verified — read before trusting
+
+1. **A genuine RAR has never been read end-to-end.** Creating a `.cbr` test
+   fixture requires the proprietary `rar` binary, so the RAR branch of
+   `formats/comic.py` has never successfully parsed a real archive. What *is*
+   proven: `rarfile` correctly finds the `unar` backend inside the container, a
+   `.cbr` that is really a ZIP is handled (dispatch is on magic bytes), and a
+   corrupt archive reports an error instead of silently producing a blank book.
+   **The first real `.cbr` scan will happen on the server.**
+2. **Architecture.** The image was built and tested as `linux/arm64` on an Apple
+   Silicon Mac. The Ubuntu server is `linux/amd64` and will pull a different set
+   of binary wheels. PyMuPDF and Pillow publish manylinux builds for both, so
+   the risk is low, but it is untested.
+3. **Scale.** Everything above was measured against a 15-book synthetic library.
+   The §14 performance targets have not been tested against a real collection.
+
+### Next steps
+
+- Deploy to the Ubuntu box (M7): `cp .env.example .env`, set `LIBRARY_PATH`,
+  `docker compose up -d --build`. Watch the first scan for CBR behaviour.
+- Remote access: **undecided, deliberately parked.** Tailscale (node sharing,
+  free, requires a VPN client on every device) versus Cloudflare Tunnel +
+  Access (browser-only, works for a non-technical guest, more moving parts).
+  The deciding question is whether the one person being shared with will
+  install a client. Either way the app itself stays auth-free and access
+  control lives at the network layer — never port-forward this directly.
+- Open question 1 (§17) becomes real once a library with both an EPUB and a PDF
+  of the same book is scanned.

@@ -1,0 +1,84 @@
+<button type="button" class="panel__close" data-close-panel aria-label="Close">✕</button>
+
+<div class="detail">
+  <img class="detail__cover" src="/cover/{{ book.id }}" alt="Cover of {{ book.display_title }}">
+
+  <div class="detail__body">
+    <h2 class="detail__title">{{ book.display_title }}</h2>
+    <p class="detail__author">
+      {%- if book.authors %}{{ book.authors | join(', ') }}{% else %}<span class="muted">Unknown author</span>{% endif -%}
+    </p>
+    {% if book.series_name %}
+    <p class="detail__series">{{ book.series_name }}{% if book.series_index is not none %} · Book {{ book.series_index | series_index }}{% endif %}</p>
+    {% endif %}
+
+    <div class="detail__actions">
+      {% if book.exists %}
+      <a class="btn btn--primary" href="/download/{{ book.id }}" download>Download {{ book.format | format_label }}</a>
+      {% else %}
+      <span class="btn btn--disabled" title="{{ book.path }}">File missing from disk</span>
+      {% endif %}
+      <button type="button" class="btn" data-edit-toggle>Edit</button>
+      <button type="button" class="btn" data-refresh="{{ book.id }}">Refresh metadata</button>
+    </div>
+
+    {% if book.needs_review and book.candidates %}
+    <section class="review">
+      <h3>Is this the right book?</h3>
+      <p class="muted">The online match wasn't confident enough to apply automatically.</p>
+      <ul class="candidates">
+        {% for c in book.candidates %}
+        <li>
+          <button type="button" class="candidate" data-match="{{ book.id }}" data-olid="{{ c.openlibrary_id }}">
+            <strong>{{ c.title }}</strong>
+            <span>{{ c.authors | join(', ') if c.authors else 'Unknown author' }}{% if c.year %} · {{ c.year }}{% endif %}</span>
+            <em>{{ (c.confidence * 100) | round | int }}% match</em>
+          </button>
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
+    {% if book.description %}
+    <div class="detail__description">
+      {% for para in book.description.split('\n') %}{% if para.strip() %}<p>{{ para }}</p>{% endif %}{% endfor %}
+    </div>
+    {% endif %}
+
+    <dl class="facts">
+      {% if book.publisher %}<dt>Publisher</dt><dd>{{ book.publisher }}</dd>{% endif %}
+      {% if book.published_year %}<dt>Published</dt><dd>{{ book.published_year }}</dd>{% endif %}
+      {% if book.isbn %}<dt>ISBN</dt><dd>{{ book.isbn }}</dd>{% endif %}
+      {% if book.language %}<dt>Language</dt><dd>{{ book.language }}</dd>{% endif %}
+      <dt>Format</dt><dd>{{ book.format | format_label }} · {{ book.file_size | filesize }}</dd>
+      {% if book.match_source %}
+      <dt>Metadata</dt>
+      <dd>{{ book.match_source }}{% if book.match_confidence %} · {{ (book.match_confidence * 100) | round | int }}%{% endif %}
+        {% if book.openlibrary_id and book.openlibrary_id.startswith('/works/') %}
+        · <a href="https://openlibrary.org{{ book.openlibrary_id }}" target="_blank" rel="noopener">Open Library</a>
+        {% endif %}
+      </dd>
+      {% endif %}
+      {% if book.overrides %}<dt>Edited</dt><dd>{{ book.overrides.keys() | join(', ') }}</dd>{% endif %}
+      {% if book.scan_error %}<dt class="warn">Problem</dt><dd class="warn">{{ book.scan_error }}</dd>{% endif %}
+      <dt>Path</dt><dd class="path">{{ book.path }}</dd>
+    </dl>
+
+    <form class="editor" method="post" action="/book/{{ book.id }}/metadata" hidden>
+      <label>Title <input name="title" value="{{ book.title or '' }}"></label>
+      <label>Authors <input name="authors" value="{{ book.authors | join(', ') }}" placeholder="Comma separated"></label>
+      <label>Series <input name="series" value="{{ book.series_name or '' }}"></label>
+      <label>Number <input name="series_index" value="{{ book.series_index | series_index }}"></label>
+      <label>Publisher <input name="publisher" value="{{ book.publisher or '' }}"></label>
+      <label>Year <input name="published_year" value="{{ book.published_year or '' }}"></label>
+      <label>ISBN <input name="isbn" value="{{ book.isbn or '' }}"></label>
+      <label class="wide">Description <textarea name="description" rows="5">{{ book.description or '' }}</textarea></label>
+      <div class="editor__actions">
+        <button type="submit" class="btn btn--primary">Save</button>
+        <button type="button" class="btn" data-edit-toggle>Cancel</button>
+        <span class="muted">Edits stick across rescans.</span>
+      </div>
+    </form>
+  </div>
+</div>

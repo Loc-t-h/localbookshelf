@@ -1,0 +1,45 @@
+services:
+  localbookshelf:
+    build: .
+    image: localbookshelf:0.1.0
+    container_name: localbookshelf
+    restart: unless-stopped
+
+    ports:
+      # Publishing on 0.0.0.0 is what makes the shelf reachable from other
+      # devices on your LAN. Bind to 127.0.0.1 instead if you put a reverse
+      # proxy in front of it.
+      - "${PORT:-8080}:8080"
+
+    volumes:
+      # READ-ONLY. The app never writes to your library, and with read_only
+      # it cannot start doing so by accident later.
+      - type: bind
+        source: "${LIBRARY_PATH:?set LIBRARY_PATH in .env}"
+        target: /library
+        read_only: true
+        bind:
+          # Fail loudly on a mistyped path instead of silently mounting a
+          # freshly created empty directory and showing an empty shelf.
+          create_host_path: false
+      # Database and cover cache. A named volume, not a bind mount: SQLite's
+      # WAL does not behave over NFS/SMB.
+      - localbookshelf-data:/data
+
+    environment:
+      TZ: "${TZ:-Etc/UTC}"
+
+    # The image runs as UID/GID 1000. If your books are owned by a different
+    # user, uncomment this and run `docker compose down -v` first, because the
+    # data volume takes its ownership from the image on first creation.
+    # user: "${PUID:-1000}:${PGID:-1000}"
+
+    # Nothing in here needs to write outside /data.
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  localbookshelf-data:

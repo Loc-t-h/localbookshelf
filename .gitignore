@@ -1,0 +1,19 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Local configuration. .env holds the path to your library; .env.example is
+# the version that gets committed.
+.env
+
+# Claude Code's per-machine permission allowlist. settings.json would be
+# shared; settings.local.json is personal.
+.claude/settings.local.json
+
+# macOS
+.DS_Store

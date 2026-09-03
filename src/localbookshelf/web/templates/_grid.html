@@ -1,0 +1,22 @@
+{% for book in books %}
+<article class="card{% if not book.exists %} card--missing{% endif %}"
+         data-book-id="{{ book.id }}" id="book-{{ book.id }}" tabindex="0">
+  <div class="card__art">
+    <img src="/cover/{{ book.id }}?size=thumb" alt="" loading="lazy" decoding="async"
+         width="300" height="450">
+    <span class="chip chip--format">{{ book.format | format_label }}</span>
+    {% if book.needs_review %}<span class="chip chip--review" title="Low-confidence metadata match">?</span>{% endif %}
+    {% if book.drm %}<span class="chip chip--warn" title="DRM protected">DRM</span>
+    {% elif book.scan_error %}<span class="chip chip--warn" title="{{ book.scan_error }}">!</span>{% endif %}
+  </div>
+  <h3 class="card__title">{{ book.display_title }}</h3>
+  <p class="card__meta">
+    {%- if book.authors %}{{ book.authors[0] }}{% else %}<span class="muted">Unknown author</span>{% endif -%}
+  </p>
+  {% if book.series_name %}
+  <p class="card__series">{{ book.series_name }}{% if book.series_index is not none %} #{{ book.series_index | series_index }}{% endif %}</p>
+  {% endif %}
+</article>
+{% else %}
+<p class="empty">Nothing matches.</p>
+{% endfor %}

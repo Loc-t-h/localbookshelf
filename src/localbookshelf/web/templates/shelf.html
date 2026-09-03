@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block body %}
+<header class="topbar">
+  <div class="topbar__row">
+    <a class="brand" href="/">📚 <span>LocalBookshelf</span></a>
+
+    <div class="search">
+      <input type="search" id="search" name="q" placeholder="Search title, author, series…"
+             value="{{ args.query or '' }}" autocomplete="off" spellcheck="false">
+      <kbd>/</kbd>
+    </div>
+
+    <div class="topbar__actions">
+      <div class="sort">
+        <select id="sort" aria-label="Sort by">
+          {% for key, label in sorts.items() %}
+          <option value="{{ key }}" {% if args.sort == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <button type="button" id="sort-dir" class="btn sort__dir"
+                data-dir="{{ args.direction }}"
+                title="{{ 'Descending — click for ascending' if args.direction == 'desc' else 'Ascending — click for descending' }}"
+                aria-label="Reverse sort order">{{ '↓' if args.direction == 'desc' else '↑' }}</button>
+      </div>
+      <button type="button" id="theme-toggle" class="btn theme-toggle"
+              title="Theme: follows your system" aria-label="Change theme">◐</button>
+      <button type="button" id="scan-button" class="btn">Rescan</button>
+    </div>
+  </div>
+
+  <div class="topbar__row topbar__row--filters">
+    <div class="chips" id="format-filters">
+      {% for key, label in formats.items() %}
+      <button type="button" class="chip chip--filter{% if args.formats and key in args.formats %} is-on{% endif %}"
+              data-format="{{ key }}">{{ label }}</button>
+      {% endfor %}
+      <button type="button" class="chip chip--filter{% if args.needs_review %} is-on{% endif %}" id="review-filter"
+              title="Books whose metadata match was uncertain">Needs review{% if stats.needs_review %} ({{ stats.needs_review }}){% endif %}</button>
+    </div>
+
+    <div class="selects">
+      <select id="author-filter" aria-label="Filter by author">
+        <option value="">All authors</option>
+        {% for author in authors %}
+        <option value="{{ author.id }}" {% if args.author_id == author.id %}selected{% endif %}>{{ author.name }} ({{ author.n }})</option>
+        {% endfor %}
+      </select>
+      {% if series %}
+      <select id="series-filter" aria-label="Filter by series">
+        <option value="">All series</option>
+        {% for s in series %}
+        <option value="{{ s.id }}" {% if args.series_id == s.id %}selected{% endif %}>{{ s.name }} ({{ s.n }})</option>
+        {% endfor %}
+      </select>
+      {% endif %}
+    </div>
+
+    <p class="count"><span id="result-count">{{ total }}</span> book{{ '' if total == 1 else 's' }}</p>
+  </div>
+
+  <div class="scanbar" id="scanbar" hidden>
+    <div class="scanbar__fill" id="scanbar-fill"></div>
+    <p class="scanbar__text" id="scanbar-text"></p>
+  </div>
+</header>
+
+<main>
+  {% if not roots %}
+  <div class="notice">
+    <p><strong>No library folder configured.</strong></p>
+    <p>Start the server with a path, e.g. <code>localbookshelf serve ~/Books</code>, or add one with <code>localbookshelf add ~/Books</code>.</p>
+  </div>
+  {% elif total == 0 and not args.query %}
+  <div class="notice">
+    <p><strong>No books indexed yet.</strong> Watching <code>{{ roots | join(', ') }}</code>.</p>
+    <p>Press <em>Rescan</em> to index the folder.</p>
+  </div>
+  {% endif %}
+
+  <div class="grid" id="grid">
+    {% include "_grid.html" %}
+  </div>
+
+  <div class="loadmore">
+    <button type="button" id="load-more" class="btn"{% if not has_more %} hidden{% endif %}>Load more</button>
+  </div>
+</main>
+
+<aside class="panel" id="panel" hidden aria-hidden="true">
+  <div class="panel__inner" id="panel-content"></div>
+</aside>
+<div class="scrim" id="scrim" hidden></div>
+
+<footer class="footer">
+  <span>{{ stats.books }} books · {{ stats.bytes | filesize }}</span>
+  {% for f in stats.formats %}<span>{{ f.format | format_label }} {{ f.n }}</span>{% endfor %}
+  {% if stats.errors %}<span class="warn">{{ stats.errors }} with problems</span>{% endif %}
+</footer>
+{% endblock %}

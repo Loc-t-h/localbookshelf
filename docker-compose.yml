@@ -33,6 +33,8 @@ services:
       # mount's source. In here it is the mount point, which is always
       # /library regardless of the host path. Hence the hardcoded value.
       LIBRARY_PATH: /library
+      # Peak scan memory lever; unset means min(8, CPU count).
+      EXTRACT_WORKERS: "${EXTRACT_WORKERS:-}"
 
     # The image runs as UID/GID 1000. If your books are owned by a different
     # user, uncomment this and run `docker compose down -v` first, because the

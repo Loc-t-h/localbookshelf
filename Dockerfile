@@ -15,7 +15,20 @@ ENV PATH="/opt/venv/bin:$PATH" \
 # manylinux wheels for amd64 and arm64, so no compiler is needed here.
 COPY pyproject.toml README.md ./
 COPY src ./src
-RUN pip install --no-cache-dir .
+# pip, setuptools and wheel are build tooling; nothing imports them at runtime,
+# so they are stripped rather than copied into the final image along with the
+# bytecode caches created during install.
+RUN pip install --no-cache-dir . \
+ && rm -rf /opt/venv/lib/python*/site-packages/pip \
+           /opt/venv/lib/python*/site-packages/pip-*.dist-info \
+           /opt/venv/lib/python*/site-packages/setuptools \
+           /opt/venv/lib/python*/site-packages/setuptools-*.dist-info \
+           /opt/venv/lib/python*/site-packages/pkg_resources \
+           /opt/venv/lib/python*/site-packages/wheel \
+           /opt/venv/lib/python*/site-packages/wheel-*.dist-info \
+           /opt/venv/bin/pip /opt/venv/bin/pip[0-9]* \
+ && find /opt/venv -name "__pycache__" -type d -prune -exec rm -rf {} + \
+ && find /opt/venv -name "*.pyc" -delete
 
 
 FROM python:3.12-slim-bookworm

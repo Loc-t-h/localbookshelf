@@ -6,7 +6,10 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
-    "uvicorn[standard]>=0.32",
+    # Plain uvicorn, not [standard]: uvloop, httptools, websockets and PyYAML
+    # are pure overhead for a LAN shelf that serves HTTP and polls for scan
+    # progress. python-dotenv came in through that extra and is declared below.
+    "uvicorn>=0.32",
     "jinja2>=3.1",
     "pillow>=11.0",
     "pymupdf>=1.24",
@@ -27,7 +30,9 @@ build-backend = "hatchling.build"
 packages = ["src/localbookshelf"]
 
 [dependency-groups]
-dev = ["pytest>=8.0"]
+# websockets is for tests/shoot.py, which drives headless Chrome over CDP. It
+# used to arrive transitively with uvicorn[standard].
+dev = ["pytest>=8.0", "websockets>=12"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

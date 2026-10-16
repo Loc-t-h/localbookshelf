@@ -66,6 +66,27 @@ LIBRARY_PATH="~/Books:/mnt/nas/comics"
 configured folder that is missing (an unplugged drive, say) is skipped with a
 warning; the shelf only refuses to start if *none* of them exist.
 
+### Resource use
+
+Serving the shelf idles around 50 MB of RAM. A scan is the expensive part, and
+its peak is set mostly by your *largest* files rather than by how many are
+parsed at once: a single 110 MB PDF peaks around 150 MB on its own, because
+PyMuPDF renders a page to extract the cover.
+
+Measured over a 144-book library (115 epub, 29 pdf, largest 110 MB):
+
+| `EXTRACT_WORKERS` | peak RSS | scan wall time |
+| --- | --- | --- |
+| 1 | ~260 MB | slowest |
+| 4 | ~320 MB | |
+| 8 (default: `min(8, CPU count)`) | ~390 MB | fastest |
+
+So the knob trims perhaps 20% off the peak, not half: most of the floor is one
+big file plus the parser itself. Set `EXTRACT_WORKERS=4` on a small server if
+you want that 20% back, but if peak memory is really a problem the bigger lever
+is the size of the PDFs in the library. Scans run in the background and are
+rare, so a slower one usually costs nothing.
+
 ## Running on your network
 
 By default the server binds to `127.0.0.1`, reachable only from the machine it

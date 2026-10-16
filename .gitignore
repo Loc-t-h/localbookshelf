@@ -17,3 +17,7 @@ build/
 
 # macOS
 .DS_Store
+
+# Per-machine compose tweaks. The dev machine uses this to opt out of the
+# `unless-stopped` restart policy that the server wants.
+docker-compose.override.yml

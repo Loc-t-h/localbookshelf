@@ -93,6 +93,23 @@
   </div>
 </main>
 
+{# Runs down the right-hand edge, like Plex's. Rendered for every alphabetical
+   sort and hidden otherwise, and the whole alphabet is always present so the
+   strip keeps one shape rather than reflowing as you filter -- letters with
+   nothing behind them are simply not clickable. #}
+{% if has_letters %}
+<nav class="az" id="az" aria-label="Skip to letter">
+  {% for ch in alphabet %}
+  {% set n = initials.get(ch, 0) %}
+  <button type="button" class="az__letter{% if args.letter == ch %} is-on{% endif %}"
+          data-letter="{{ ch }}"
+          {% if not n %}disabled aria-disabled="true"{% endif %}
+          title="{% if n %}{{ n }} book{{ '' if n == 1 else 's' }}{% else %}nothing under {{ ch }}{% endif %}"
+          aria-pressed="{{ 'true' if args.letter == ch else 'false' }}">{{ ch }}</button>
+  {% endfor %}
+</nav>
+{% endif %}
+
 <aside class="panel" id="panel" hidden aria-hidden="true">
   <div class="panel__inner" id="panel-content"></div>
 </aside>

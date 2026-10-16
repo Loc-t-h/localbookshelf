@@ -122,6 +122,17 @@ class BookFields:
     enriched: bool = False
 
 
+# The A-Z strip filters on whatever column the shelf is sorted by -- the only
+# reading that matches what you are looking at. The four non-alphabetical sorts
+# (date added, year, file date, size) get no strip, because "skip to S" is
+# meaningless in them.
+LETTER_COLUMNS = {
+    "title": "b.sort_title",
+    "author": "b.primary_author_sort",
+    "series": "s.name",
+}
+
+
 def sort_title_for(title: str | None) -> str:
     return LEADING_ARTICLE.sub("", (title or "").strip()).lower()
 
@@ -387,9 +398,50 @@ class Library:
         needs_review: bool = False,
         sort: str = DEFAULT_SORT,
         direction: str | None = None,
+        letter: str | None = None,
         limit: int = 120,
         offset: int = 0,
     ) -> tuple[list[dict], int]:
+        joins, where, params = self._filters(
+            query=query, formats=formats, author_id=author_id,
+            series_id=series_id, needs_review=needs_review,
+            sort=sort, letter=letter,
+        )
+        clause = (" WHERE " + " AND ".join(where)) if where else ""
+        order, _ = order_clause(sort, direction)
+        # Relevance leads only while the shelf is on its default sort. Picking
+        # "Title" during a search should actually sort by title.
+        if query and sort == DEFAULT_SORT:
+            order = "f.rank, " + order
+
+        total_row = self.db.query_one(
+            f"SELECT COUNT(*) AS n FROM books b{joins}{clause}", tuple(params)
+        )
+        total = total_row["n"] if total_row else 0
+
+        rows = self.db.query(
+            f"SELECT b.*, s.name AS series_name FROM books b{joins}{clause}"
+            f" ORDER BY {order} LIMIT ? OFFSET ?",
+            tuple(params) + (limit, offset),
+        )
+        return [self._row_to_book(row) for row in rows], total
+
+    def _filters(
+        self,
+        *,
+        query: str | None,
+        formats: list[str] | None,
+        author_id: int | None,
+        series_id: int | None,
+        needs_review: bool,
+        sort: str,
+        letter: str | None,
+    ) -> tuple[str, list[str], list]:
+        """Joins, WHERE conditions and params shared by list_books and initials.
+
+        One builder for both, so the counts behind the A-Z strip cannot drift
+        from the shelf the strip filters.
+        """
         where: list[str] = []
         params: list = []
         joins = " LEFT JOIN series s ON s.id = b.series_id"
@@ -410,24 +462,55 @@ class Library:
         if needs_review:
             where.append("b.needs_review = 1")
 
-        clause = (" WHERE " + " AND ".join(where)) if where else ""
-        order, _ = order_clause(sort, direction)
-        # Relevance leads only while the shelf is on its default sort. Picking
-        # "Title" during a search should actually sort by title.
-        if query and sort == DEFAULT_SORT:
-            order = "f.rank, " + order
+        column = LETTER_COLUMNS.get(sort)
+        if letter and column:
+            initial = f"UPPER(SUBSTR({column}, 1, 1))"
+            if letter == "#":
+                # Digits and symbols. A NULL sort value makes this NULL rather
+                # than true, so books with no author or series stay out of it.
+                where.append(f"{initial} NOT BETWEEN 'A' AND 'Z'")
+            else:
+                where.append(f"{initial} = ?")
+                params.append(letter[:1].upper())
 
-        total_row = self.db.query_one(
-            f"SELECT COUNT(*) AS n FROM books b{joins}{clause}", tuple(params)
+        return joins, where, params
+
+    def initials(
+        self,
+        *,
+        query: str | None = None,
+        formats: list[str] | None = None,
+        author_id: int | None = None,
+        series_id: int | None = None,
+        needs_review: bool = False,
+        sort: str = DEFAULT_SORT,
+        direction: str | None = None,
+    ) -> dict[str, int]:
+        """How many books sit under each initial, under the current filters.
+
+        The strip always renders the full alphabet so it keeps one stable shape
+        instead of reflowing while you type; this decides which letters are
+        clickable. Empty dict for a sort that is not alphabetical.
+        """
+        column = LETTER_COLUMNS.get(sort)
+        if not column:
+            return {}
+
+        joins, where, params = self._filters(
+            query=query, formats=formats, author_id=author_id,
+            series_id=series_id, needs_review=needs_review,
+            sort=sort, letter=None,
         )
-        total = total_row["n"] if total_row else 0
-
+        where.append(f"{column} IS NOT NULL AND {column} <> ''")
+        clause = " WHERE " + " AND ".join(where)
+        initial = f"UPPER(SUBSTR({column}, 1, 1))"
         rows = self.db.query(
-            f"SELECT b.*, s.name AS series_name FROM books b{joins}{clause}"
-            f" ORDER BY {order} LIMIT ? OFFSET ?",
-            tuple(params) + (limit, offset),
+            f"SELECT CASE WHEN {initial} BETWEEN 'A' AND 'Z' THEN {initial}"
+            f" ELSE '#' END AS ch, COUNT(*) AS n"
+            f" FROM books b{joins}{clause} GROUP BY ch",
+            tuple(params),
         )
-        return [self._row_to_book(row) for row in rows], total
+        return {row["ch"]: row["n"] for row in rows if row["ch"]}
 
     def get_book(self, book_id: int) -> dict | None:
         row = self.db.query_one(

@@ -26,10 +26,13 @@ from .. import __version__
 from ..config import Config
 from ..covers import cover_paths
 from ..db import Database
-from ..library import DEFAULT_SORT, SORTS, Library, order_clause
+from ..library import DEFAULT_SORT, LETTER_COLUMNS, SORTS, Library, order_clause
 from ..scanner import Scanner
 
 HERE = Path(__file__).parent
+
+# "#" collects digits and symbols, and leads because that is where they sort.
+ALPHABET = ["#"] + [chr(c) for c in range(ord("A"), ord("Z") + 1)]
 # Books per page, and so per auto-load step as you scroll. 48 divides evenly by
 # 2, 3, 4, 6 and 8, which is the range of column counts the shelf grid settles
 # on between phone and desktop widths, so a page tends to end on a full row.
@@ -73,7 +76,11 @@ def create_app(config: Config, db: Database, library: Library, scanner: Scanner)
         formats = [f for f in params.getlist("format") if f in FORMAT_LABELS]
         sort = params.get("sort") if params.get("sort") in SORTS else DEFAULT_SORT
         _, direction = order_clause(sort, params.get("dir"))
+        letter = (params.get("letter") or "").strip()[:1].upper()
+        if letter and letter != "#" and not letter.isalpha():
+            letter = ""
         return {
+            "letter": letter or None,
             "query": (params.get("q") or "").strip() or None,
             "formats": formats or None,
             "author_id": _as_int(params.get("author")),
@@ -102,6 +109,11 @@ def create_app(config: Config, db: Database, library: Library, scanner: Scanner)
                 "has_more": page * PAGE_SIZE < total,
                 "args": args,
                 "raw_query": request.query_params,
+                "alphabet": ALPHABET,
+                # Which letters are clickable, and whether the strip shows at
+                # all -- it is meaningless on a sort that is not alphabetical.
+                "initials": library.initials(**{k: v for k, v in args.items() if k != "letter"}),
+                "has_letters": args["sort"] in LETTER_COLUMNS,
                 "authors": library.authors(limit=200),
                 "series": library.series(limit=200),
                 "stats": library.stats(),
@@ -118,6 +130,17 @@ def create_app(config: Config, db: Database, library: Library, scanner: Scanner)
         books, total = library.list_books(
             **args, limit=PAGE_SIZE, offset=(page - 1) * PAGE_SIZE
         )
+        headers = {
+            "X-Total-Count": str(total),
+            "X-Has-More": "1" if page * PAGE_SIZE < total else "0",
+        }
+        # Only on the first page: a filter change re-renders the whole grid, and
+        # the A-Z strip has to be told which letters still have books behind
+        # them. Appending page 2 changes nothing about that, so it is not
+        # recomputed while scrolling.
+        if page == 1:
+            counts = library.initials(**{k: v for k, v in args.items() if k != "letter"})
+            headers["X-Initials"] = ",".join(f"{ch}:{n}" for ch, n in sorted(counts.items()))
         return templates.TemplateResponse(
             request,
             "_grid.html",
@@ -127,10 +150,7 @@ def create_app(config: Config, db: Database, library: Library, scanner: Scanner)
                 "page": page,
                 "has_more": page * PAGE_SIZE < total,
             },
-            headers={
-                "X-Total-Count": str(total),
-                "X-Has-More": "1" if page * PAGE_SIZE < total else "0",
-            },
+            headers=headers,
         )
 
     @app.get("/book/{book_id}", response_class=HTMLResponse)

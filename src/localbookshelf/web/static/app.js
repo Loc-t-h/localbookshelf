@@ -9,6 +9,7 @@
   const scrim = document.getElementById("scrim");
   const loadMore = document.getElementById("load-more");
   const sentinel = document.getElementById("load-sentinel");
+  const azStrip = document.getElementById("az");
   const resultCount = document.getElementById("result-count");
 
   let page = 1;
@@ -28,6 +29,11 @@
 
   function setParams(mutate, { reload = true } = {}) {
     const next = params();
+    // Dropped before the mutation, so changing the search, sort or format
+    // clears it, while the letter buttons (which set it in their own mutation)
+    // keep it. A letter from the previous view rarely applies to the new one,
+    // and under a different sort it means a different column entirely.
+    next.delete("letter");
     mutate(next);
     next.delete("page");
     const qs = next.toString();
@@ -44,6 +50,7 @@
     if (mine !== generation) return;
     grid.innerHTML = html;
     resultCount.textContent = response.headers.get("X-Total-Count") || "0";
+    syncStrip(response.headers.get("X-Initials"));
     autoLoad = true;
     failed = false;
     hasMore = response.headers.get("X-Has-More") === "1";
@@ -220,6 +227,49 @@
   // Takes the button out of the layout where auto-load works, and starts the
   // spinner if the first page already reaches the bottom of the window.
   renderPager();
+
+  // -- A-Z strip ---------------------------------------------------------
+
+  function syncStrip(header) {
+    if (!azStrip || header === null) return;
+    const counts = new Map(
+      header
+        .split(",")
+        .filter(Boolean)
+        .map((pair) => {
+          const [ch, n] = pair.split(":");
+          return [ch, Number(n) || 0];
+        }),
+    );
+    const active = params().get("letter");
+    azStrip.querySelectorAll("[data-letter]").forEach((button) => {
+      const ch = button.dataset.letter;
+      const n = counts.get(ch) || 0;
+      button.disabled = n === 0;
+      button.setAttribute("aria-disabled", n === 0 ? "true" : "false");
+      button.title = n
+        ? `${n} book${n === 1 ? "" : "s"}`
+        : `nothing under ${ch}`;
+      const on = ch === active;
+      button.classList.toggle("is-on", on);
+      button.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+
+  azStrip?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-letter]");
+    if (!button || button.disabled) return;
+    // Clicking the active letter clears it, so the strip toggles rather than
+    // trapping you in one letter with no way back to the whole shelf.
+    const next = button.classList.contains("is-on") ? null : button.dataset.letter;
+    setParams((p) => (next ? p.set("letter", next) : p.delete("letter")));
+    azStrip.querySelectorAll("[data-letter]").forEach((el) => {
+      const on = el === button && next !== null;
+      el.classList.toggle("is-on", on);
+      el.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
 
   // -- detail panel ------------------------------------------------------
 

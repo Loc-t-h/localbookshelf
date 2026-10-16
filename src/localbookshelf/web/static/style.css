@@ -283,6 +283,92 @@ main { padding: 22px 18px 40px; }
 .notice { margin-bottom: 22px; }
 .notice p { margin: 0 0 8px; }
 
+/* -- A-Z strip ---------------------------------------------------------- */
+/* Fixed to the right edge and vertically centred, so it runs down the side of
+   the screen independently of how far the shelf has scrolled. Transparent at
+   rest: it should be available without competing with the covers. */
+
+.az {
+  position: fixed;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 20;            /* below the detail panel and its scrim (40) */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 6px 4px;
+  max-height: 100vh;
+  opacity: 0.35;
+  transition: opacity 120ms ease, background-color 120ms ease;
+  background-color: transparent;
+  border-radius: var(--radius) 0 0 var(--radius);
+}
+
+/* Reveal on approach, and stay revealed while a letter is active. */
+.az:hover,
+.az:focus-within,
+.az:has(.is-on) {
+  opacity: 1;
+  background-color: color-mix(in srgb, var(--bg-raised) 72%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+.az__letter {
+  appearance: none;
+  background: none;
+  border: 0;
+  color: var(--text-dim);
+  font: 600 10px/1.5 inherit;
+  letter-spacing: 0.04em;
+  width: 17px;
+  height: 15px;
+  padding: 0;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: color 90ms ease, background-color 90ms ease, transform 90ms ease;
+}
+
+.az__letter:hover:not(:disabled) {
+  color: var(--accent-ink);
+  background: var(--accent);
+  /* Nudged left rather than scaled, so neighbouring letters stay put and the
+     pointer does not slide off the one it is on. */
+  transform: translateX(-2px);
+}
+
+.az__letter.is-on {
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+
+.az__letter:disabled {
+  color: var(--text-faint);
+  opacity: 0.4;
+  cursor: default;
+}
+
+.az__letter:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Keep the rightmost covers clear of the strip. */
+@media (min-width: 701px) {
+  main { padding-right: 26px; }
+}
+
+/* Too cramped to hit accurately on a phone; search covers the same need. */
+@media (max-width: 700px) {
+  .az { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .az, .az__letter { transition: none; }
+  .az__letter:hover:not(:disabled) { transform: none; }
+}
+
 .loadmore { display: flex; justify-content: center; padding: 30px 0 0; min-height: 40px; }
 .loadmore__auto { display: flex; align-items: center; justify-content: center; }
 

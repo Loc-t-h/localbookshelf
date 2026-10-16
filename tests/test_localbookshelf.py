@@ -638,3 +638,67 @@ def test_inline_markup_is_stripped_from_metadata_text():
     )
     # Not a markup stripper in general: a real angle bracket stays.
     assert clean_text("Programming <T> Generics") == "Programming <T> Generics"
+
+
+# -- the A-Z strip -----------------------------------------------------------
+
+
+def test_initials_cover_every_book_exactly_once(shelf):
+    _, _, library, _, _ = shelf
+    counts = library.initials(sort="title")
+    total = library.list_books(sort="title", limit=1)[1]
+    assert sum(counts.values()) == total
+    # Buckets are single characters: A-Z, or "#" for digits and symbols.
+    assert all(len(ch) == 1 for ch in counts)
+
+
+def test_letter_filters_to_that_initial(shelf):
+    _, _, library, _, _ = shelf
+    counts = library.initials(sort="title")
+    letter = max(counts, key=lambda ch: (counts[ch], ch != "#"))
+    books, total = library.list_books(sort="title", letter=letter, limit=200)
+    assert total == counts[letter]
+    assert books, "a letter the strip offers must return something"
+    for book in books:
+        assert book["sort_title"][:1].upper() == letter
+
+
+def test_letter_follows_the_active_sort(shelf):
+    """Under author sort the strip files by surname, not by title."""
+    _, _, library, _, _ = shelf
+    counts = library.initials(sort="author")
+    assert counts, "author is an alphabetical sort and must offer letters"
+    letter = max(counts, key=counts.get)
+    books, _ = library.list_books(sort="author", letter=letter, limit=200)
+    for book in books:
+        assert book["primary_author_sort"][:1].upper() == letter
+
+
+def test_a_letter_with_nothing_behind_it_returns_nothing(shelf):
+    _, _, library, _, _ = shelf
+    counts = library.initials(sort="title")
+    empty = next((ch for ch in "QXZ" if ch not in counts), None)
+    if empty:
+        assert library.list_books(sort="title", letter=empty, limit=10)[1] == 0
+
+
+def test_non_alphabetical_sorts_offer_no_letters(shelf):
+    """"Skip to S" is meaningless when sorted by date or size."""
+    _, _, library, _, _ = shelf
+    for sort in ("added", "year", "modified", "size"):
+        assert library.initials(sort=sort) == {}, sort
+
+
+def test_letter_is_ignored_on_a_sort_that_has_no_strip(shelf):
+    """A stale letter in the URL must not silently empty the shelf."""
+    _, _, library, _, _ = shelf
+    everything = library.list_books(sort="added", limit=200)[1]
+    assert library.list_books(sort="added", letter="S", limit=200)[1] == everything
+
+
+def test_initials_respect_the_other_filters(shelf):
+    """The strip counts what the current shelf would show, not the whole library."""
+    _, _, library, _, _ = shelf
+    counts = library.initials(sort="title", formats=["epub"])
+    epubs = library.list_books(sort="title", formats=["epub"], limit=1)[1]
+    assert sum(counts.values()) == epubs

@@ -26,10 +26,19 @@ from .. import __version__
 from ..config import Config
 from ..covers import cover_paths
 from ..db import Database
-from ..library import DEFAULT_SORT, LETTER_COLUMNS, SORTS, Library, order_clause
+from ..library import DEFAULT_SORT, SORTS, Library, order_clause
 from ..scanner import Scanner
 
 HERE = Path(__file__).parent
+
+def _asset_stamp() -> str:
+    """Short digest of the static files, for cache-busting their URLs."""
+    newest = 0.0
+    for path in sorted((HERE / "static").rglob("*")):
+        if path.is_file():
+            newest = max(newest, path.stat().st_mtime)
+    return f"{__version__}-{int(newest)}"
+
 
 # "#" collects digits and symbols, and leads because that is where they sort.
 ALPHABET = ["#"] + [chr(c) for c in range(ord("A"), ord("Z") + 1)]
@@ -67,9 +76,13 @@ def create_app(config: Config, db: Database, library: Library, scanner: Scanner)
     templates.env.filters["filesize"] = _filesize
     templates.env.filters["format_label"] = lambda f: FORMAT_LABELS.get(f, (f or "?").upper())
     templates.env.filters["series_index"] = _series_index
-    # Stamped onto the static URLs so an upgrade cannot leave a browser running
-    # last version's JavaScript against this version's markup.
-    templates.env.globals["version"] = __version__
+    # Stamped onto the static URLs so a browser cannot keep serving the previous
+    # CSS or JavaScript against new markup. Derived from the files themselves,
+    # not from __version__: during development the version rarely moves while
+    # the assets change constantly, and a stamp that does not change is a cache
+    # buster that does not bust. In a built image the mtimes are fixed, so the
+    # value is stable across restarts and still caches properly.
+    templates.env.globals["version"] = _asset_stamp()
 
     def _query_args(request: Request) -> dict:
         params = request.query_params
@@ -113,7 +126,6 @@ def create_app(config: Config, db: Database, library: Library, scanner: Scanner)
                 # Which letters are clickable, and whether the strip shows at
                 # all -- it is meaningless on a sort that is not alphabetical.
                 "initials": library.initials(**{k: v for k, v in args.items() if k != "letter"}),
-                "has_letters": args["sort"] in LETTER_COLUMNS,
                 "authors": library.authors(limit=200),
                 "series": library.series(limit=200),
                 "stats": library.stats(),

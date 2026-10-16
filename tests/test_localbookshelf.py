@@ -682,18 +682,26 @@ def test_a_letter_with_nothing_behind_it_returns_nothing(shelf):
         assert library.list_books(sort="title", letter=empty, limit=10)[1] == 0
 
 
-def test_non_alphabetical_sorts_offer_no_letters(shelf):
-    """"Skip to S" is meaningless when sorted by date or size."""
+def test_every_sort_offers_letters(shelf):
+    """Including the default one.
+
+    The strip used to hide itself on non-alphabetical sorts, which meant it was
+    invisible on the shelf as it first loads -- "added" is the default sort.
+    Those sorts now file by title, so "S" means "books titled S..., newest
+    first" rather than nothing at all.
+    """
     _, _, library, _, _ = shelf
-    for sort in ("added", "year", "modified", "size"):
-        assert library.initials(sort=sort) == {}, sort
+    for sort in ("added", "title", "author", "series", "year", "modified", "size"):
+        assert library.initials(sort=sort), sort
 
 
-def test_letter_is_ignored_on_a_sort_that_has_no_strip(shelf):
-    """A stale letter in the URL must not silently empty the shelf."""
+def test_a_non_alphabetical_sort_files_letters_by_title(shelf):
     _, _, library, _, _ = shelf
-    everything = library.list_books(sort="added", limit=200)[1]
-    assert library.list_books(sort="added", letter="S", limit=200)[1] == everything
+    by_title = library.initials(sort="title")
+    assert library.initials(sort="added") == by_title
+    books, _ = library.list_books(sort="added", letter="S", limit=200)
+    for book in books:
+        assert book["sort_title"][:1].upper() == "S"
 
 
 def test_initials_respect_the_other_filters(shelf):

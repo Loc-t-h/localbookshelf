@@ -122,15 +122,20 @@ class BookFields:
     enriched: bool = False
 
 
-# The A-Z strip filters on whatever column the shelf is sorted by -- the only
-# reading that matches what you are looking at. The four non-alphabetical sorts
-# (date added, year, file date, size) get no strip, because "skip to S" is
-# meaningless in them.
+# The A-Z strip files a book under whichever column the shelf is sorted by, so
+# that the letters match what you are reading down the page. Sorts that are not
+# alphabetical fall back to the title: "S" under Recently added still sensibly
+# means "recently added books whose title starts with S".
 LETTER_COLUMNS = {
     "title": "b.sort_title",
     "author": "b.primary_author_sort",
     "series": "s.name",
 }
+LETTER_COLUMN_DEFAULT = "b.sort_title"
+
+
+def letter_column(sort: str) -> str:
+    return LETTER_COLUMNS.get(sort, LETTER_COLUMN_DEFAULT)
 
 
 def sort_title_for(title: str | None) -> str:
@@ -462,8 +467,8 @@ class Library:
         if needs_review:
             where.append("b.needs_review = 1")
 
-        column = LETTER_COLUMNS.get(sort)
-        if letter and column:
+        if letter:
+            column = letter_column(sort)
             initial = f"UPPER(SUBSTR({column}, 1, 1))"
             if letter == "#":
                 # Digits and symbols. A NULL sort value makes this NULL rather
@@ -490,12 +495,9 @@ class Library:
 
         The strip always renders the full alphabet so it keeps one stable shape
         instead of reflowing while you type; this decides which letters are
-        clickable. Empty dict for a sort that is not alphabetical.
+        clickable.
         """
-        column = LETTER_COLUMNS.get(sort)
-        if not column:
-            return {}
-
+        column = letter_column(sort)
         joins, where, params = self._filters(
             query=query, formats=formats, author_id=author_id,
             series_id=series_id, needs_review=needs_review,

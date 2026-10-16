@@ -93,19 +93,21 @@
   </div>
 </main>
 
-{# Runs down the right-hand edge, like Plex's. The whole alphabet is always
-   present so the strip keeps one shape rather than reflowing as you filter --
+{# Runs down the right-hand edge, like Plex's, and scrolls the shelf to that
+   initial rather than filtering it. Only on the title sort: jumping to a
+   letter means nothing while the shelf is ordered by date or size. The whole
+   alphabet is always drawn so the strip keeps one shape as you filter --
    letters with nothing behind them are simply not clickable. #}
+{% if show_letters %}
 <nav class="az" id="az" aria-label="Skip to letter">
   {% for ch in alphabet %}
   {% set n = initials.get(ch, 0) %}
-  <button type="button" class="az__letter{% if args.letter == ch %} is-on{% endif %}"
-          data-letter="{{ ch }}"
+  <button type="button" class="az__letter" data-letter="{{ ch }}"
           {% if not n %}disabled aria-disabled="true"{% endif %}
-          title="{% if n %}{{ n }} book{{ '' if n == 1 else 's' }}{% else %}nothing under {{ ch }}{% endif %}"
-          aria-pressed="{{ 'true' if args.letter == ch else 'false' }}">{{ ch }}</button>
+          title="{% if n %}Skip to {{ ch }} ({{ n }} book{{ '' if n == 1 else 's' }}){% else %}nothing under {{ ch }}{% endif %}">{{ ch }}</button>
   {% endfor %}
 </nav>
+{% endif %}
 
 <aside class="panel" id="panel" hidden aria-hidden="true">
   <div class="panel__inner" id="panel-content"></div>

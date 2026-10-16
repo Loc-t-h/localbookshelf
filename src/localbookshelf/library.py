@@ -122,20 +122,16 @@ class BookFields:
     enriched: bool = False
 
 
-# The A-Z strip files a book under whichever column the shelf is sorted by, so
-# that the letters match what you are reading down the page. Sorts that are not
-# alphabetical fall back to the title: "S" under Recently added still sensibly
-# means "recently added books whose title starts with S".
-LETTER_COLUMNS = {
-    "title": "b.sort_title",
-    "author": "b.primary_author_sort",
-    "series": "s.name",
-}
-LETTER_COLUMN_DEFAULT = "b.sort_title"
+# The A-Z strip scrolls the shelf to an initial rather than filtering it, and
+# it is only offered on the title sort, so the only column it ever files by is
+# the sort title. "#" collects digits and symbols.
+LETTER_COLUMN = "b.sort_title"
 
 
-def letter_column(sort: str) -> str:
-    return LETTER_COLUMNS.get(sort, LETTER_COLUMN_DEFAULT)
+def initial_for(sort_title: str | None) -> str:
+    """The strip bucket a book belongs to: 'A'-'Z', or '#'."""
+    ch = (sort_title or "").strip()[:1].upper()
+    return ch if "A" <= ch <= "Z" else "#"
 
 
 def sort_title_for(title: str | None) -> str:
@@ -403,14 +399,13 @@ class Library:
         needs_review: bool = False,
         sort: str = DEFAULT_SORT,
         direction: str | None = None,
-        letter: str | None = None,
         limit: int = 120,
         offset: int = 0,
     ) -> tuple[list[dict], int]:
         joins, where, params = self._filters(
             query=query, formats=formats, author_id=author_id,
             series_id=series_id, needs_review=needs_review,
-            sort=sort, letter=letter,
+            sort=sort,
         )
         clause = (" WHERE " + " AND ".join(where)) if where else ""
         order, _ = order_clause(sort, direction)
@@ -440,7 +435,6 @@ class Library:
         series_id: int | None,
         needs_review: bool,
         sort: str,
-        letter: str | None,
     ) -> tuple[str, list[str], list]:
         """Joins, WHERE conditions and params shared by list_books and initials.
 
@@ -467,17 +461,6 @@ class Library:
         if needs_review:
             where.append("b.needs_review = 1")
 
-        if letter:
-            column = letter_column(sort)
-            initial = f"UPPER(SUBSTR({column}, 1, 1))"
-            if letter == "#":
-                # Digits and symbols. A NULL sort value makes this NULL rather
-                # than true, so books with no author or series stay out of it.
-                where.append(f"{initial} NOT BETWEEN 'A' AND 'Z'")
-            else:
-                where.append(f"{initial} = ?")
-                params.append(letter[:1].upper())
-
         return joins, where, params
 
     def initials(
@@ -493,26 +476,23 @@ class Library:
     ) -> dict[str, int]:
         """How many books sit under each initial, under the current filters.
 
-        The strip always renders the full alphabet so it keeps one stable shape
-        instead of reflowing while you type; this decides which letters are
-        clickable.
+        The strip draws the whole alphabet regardless, so it keeps one shape
+        instead of reflowing while you type; this is what decides which letters
+        can be jumped to.
         """
-        column = letter_column(sort)
         joins, where, params = self._filters(
             query=query, formats=formats, author_id=author_id,
-            series_id=series_id, needs_review=needs_review,
-            sort=sort, letter=None,
+            series_id=series_id, needs_review=needs_review, sort=sort,
         )
-        where.append(f"{column} IS NOT NULL AND {column} <> ''")
-        clause = " WHERE " + " AND ".join(where)
-        initial = f"UPPER(SUBSTR({column}, 1, 1))"
+        clause = (" WHERE " + " AND ".join(where)) if where else ""
+        initial = f"UPPER(SUBSTR({LETTER_COLUMN}, 1, 1))"
         rows = self.db.query(
             f"SELECT CASE WHEN {initial} BETWEEN 'A' AND 'Z' THEN {initial}"
             f" ELSE '#' END AS ch, COUNT(*) AS n"
             f" FROM books b{joins}{clause} GROUP BY ch",
             tuple(params),
         )
-        return {row["ch"]: row["n"] for row in rows if row["ch"]}
+        return {row["ch"]: row["n"] for row in rows}
 
     def get_book(self, book_id: int) -> dict | None:
         row = self.db.query_one(

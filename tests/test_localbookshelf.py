@@ -40,6 +40,7 @@ from localbookshelf.formats.base import (  # noqa: E402
 )
 from localbookshelf.identity import file_identity  # noqa: E402
 from localbookshelf.library import (  # noqa: E402
+    initial_for,
     SORTS,
     Library,
     author_sort_for,
@@ -641,72 +642,62 @@ def test_inline_markup_is_stripped_from_metadata_text():
 
 
 # -- the A-Z strip -----------------------------------------------------------
+# The strip scrolls the shelf to an initial rather than filtering it, so what
+# the server owes it is only the per-letter counts and a bucket for each book.
+
+
+def test_initial_buckets_letters_and_lumps_the_rest_under_hash():
+    assert initial_for("hyperion") == "H"
+    assert initial_for("  zed") == "Z"
+    assert initial_for("1984") == "#"
+    assert initial_for("\u00e9mile") == "#"      # not A-Z after upcasing
+    assert initial_for("") == "#"
+    assert initial_for(None) == "#"
 
 
 def test_initials_cover_every_book_exactly_once(shelf):
     _, _, library, _, _ = shelf
-    counts = library.initials(sort="title")
-    total = library.list_books(sort="title", limit=1)[1]
+    counts = library.initials()
+    total = library.list_books(limit=1)[1]
     assert sum(counts.values()) == total
-    # Buckets are single characters: A-Z, or "#" for digits and symbols.
     assert all(len(ch) == 1 for ch in counts)
 
 
-def test_letter_filters_to_that_initial(shelf):
+def test_every_count_matches_the_books_behind_it(shelf):
+    """The strip dims letters with nothing behind them, so the counts have to
+    agree with what a jump to that letter would actually land on."""
     _, _, library, _, _ = shelf
-    counts = library.initials(sort="title")
-    letter = max(counts, key=lambda ch: (counts[ch], ch != "#"))
-    books, total = library.list_books(sort="title", letter=letter, limit=200)
-    assert total == counts[letter]
-    assert books, "a letter the strip offers must return something"
+    counts = library.initials()
+    books = library.list_books(sort="title", limit=500)[0]
+    tally: dict[str, int] = {}
     for book in books:
-        assert book["sort_title"][:1].upper() == letter
+        ch = initial_for(book["sort_title"])
+        tally[ch] = tally.get(ch, 0) + 1
+    assert counts == tally
 
 
-def test_letter_follows_the_active_sort(shelf):
-    """Under author sort the strip files by surname, not by title."""
-    _, _, library, _, _ = shelf
-    counts = library.initials(sort="author")
-    assert counts, "author is an alphabetical sort and must offer letters"
-    letter = max(counts, key=counts.get)
-    books, _ = library.list_books(sort="author", letter=letter, limit=200)
-    for book in books:
-        assert book["primary_author_sort"][:1].upper() == letter
-
-
-def test_a_letter_with_nothing_behind_it_returns_nothing(shelf):
-    _, _, library, _, _ = shelf
-    counts = library.initials(sort="title")
-    empty = next((ch for ch in "QXZ" if ch not in counts), None)
-    if empty:
-        assert library.list_books(sort="title", letter=empty, limit=10)[1] == 0
-
-
-def test_every_sort_offers_letters(shelf):
-    """Including the default one.
-
-    The strip used to hide itself on non-alphabetical sorts, which meant it was
-    invisible on the shelf as it first loads -- "added" is the default sort.
-    Those sorts now file by title, so "S" means "books titled S..., newest
-    first" rather than nothing at all.
-    """
-    _, _, library, _, _ = shelf
-    for sort in ("added", "title", "author", "series", "year", "modified", "size"):
-        assert library.initials(sort=sort), sort
-
-
-def test_a_non_alphabetical_sort_files_letters_by_title(shelf):
+def test_initials_are_the_same_whatever_the_sort(shelf):
+    """Books are bucketed by title regardless of order, because the strip is
+    only ever offered on the title sort."""
     _, _, library, _, _ = shelf
     by_title = library.initials(sort="title")
-    assert library.initials(sort="added") == by_title
-    books, _ = library.list_books(sort="added", letter="S", limit=200)
-    for book in books:
-        assert book["sort_title"][:1].upper() == "S"
+    for sort in ("added", "author", "series", "year", "modified", "size"):
+        assert library.initials(sort=sort) == by_title, sort
 
 
 def test_initials_respect_the_other_filters(shelf):
     """The strip counts what the current shelf would show, not the whole library."""
     _, _, library, _, _ = shelf
-    counts = library.initials(sort="title", formats=["epub"])
-    epubs = library.list_books(sort="title", formats=["epub"], limit=1)[1]
+    counts = library.initials(formats=["epub"])
+    epubs = library.list_books(formats=["epub"], limit=1)[1]
     assert sum(counts.values()) == epubs
+
+
+def test_a_letter_with_no_books_is_absent_from_the_counts(shelf):
+    _, _, library, _, _ = shelf
+    counts = library.initials()
+    books = library.list_books(sort="title", limit=500)[0]
+    present = {initial_for(b["sort_title"]) for b in books}
+    for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+        if ch not in present:
+            assert ch not in counts

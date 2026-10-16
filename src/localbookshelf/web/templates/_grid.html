@@ -1,6 +1,7 @@
 {% for book in books %}
 <article class="card{% if not book.exists %} card--missing{% endif %}"
-         data-book-id="{{ book.id }}" id="book-{{ book.id }}" tabindex="0">
+         data-book-id="{{ book.id }}" id="book-{{ book.id }}" tabindex="0"
+         data-initial="{{ book.sort_title | initial }}">
   <div class="card__art">
     <img src="/cover/{{ book.id }}?size=thumb" alt="" loading="lazy" decoding="async"
          width="300" height="450">

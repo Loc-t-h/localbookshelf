@@ -29,11 +29,6 @@
 
   function setParams(mutate, { reload = true } = {}) {
     const next = params();
-    // Dropped before the mutation, so changing the search, sort or format
-    // clears it, while the letter buttons (which set it in their own mutation)
-    // keep it. A letter from the previous view rarely applies to the new one,
-    // and under a different sort it means a different column entirely.
-    next.delete("letter");
     mutate(next);
     next.delete("page");
     const qs = next.toString();
@@ -55,6 +50,7 @@
     failed = false;
     hasMore = response.headers.get("X-Has-More") === "1";
     renderPager();
+    markCurrentLetter();
   }
 
   // -- search ------------------------------------------------------------
@@ -229,6 +225,11 @@
   renderPager();
 
   // -- A-Z strip ---------------------------------------------------------
+  // Scrolls the shelf to an initial rather than filtering it. The catch is
+  // that the shelf is paginated, so the letter you asked for is usually not in
+  // the DOM yet: pages are pulled in until it arrives.
+
+  const topbar = document.querySelector(".topbar");
 
   function syncStrip(header) {
     if (!azStrip || header === null) return;
@@ -241,35 +242,80 @@
           return [ch, Number(n) || 0];
         }),
     );
-    const active = params().get("letter");
     azStrip.querySelectorAll("[data-letter]").forEach((button) => {
       const ch = button.dataset.letter;
       const n = counts.get(ch) || 0;
       button.disabled = n === 0;
       button.setAttribute("aria-disabled", n === 0 ? "true" : "false");
-      button.title = n
-        ? `${n} book${n === 1 ? "" : "s"}`
-        : `nothing under ${ch}`;
-      const on = ch === active;
-      button.classList.toggle("is-on", on);
-      button.setAttribute("aria-pressed", on ? "true" : "false");
+      button.title = n ? `Skip to ${ch} (${n} book${n === 1 ? "" : "s"})` : `nothing under ${ch}`;
     });
+  }
+
+  function firstCardFor(ch) {
+    return grid?.querySelector(`[data-initial="${CSS.escape(ch)}"]`) || null;
+  }
+
+  function scrollToCard(card) {
+    // Clear the sticky header, or the row lands underneath it.
+    const offset = (topbar?.getBoundingClientRect().height || 0) + 12;
+    const top = card.getBoundingClientRect().top + window.scrollY - offset;
+    window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+  }
+
+  async function jumpTo(ch) {
+    let card = firstCardFor(ch);
+    // Pull pages in until the letter shows up. `guard` is paranoia: without
+    // it a page that silently stops advancing would spin this forever.
+    let guard = 0;
+    while (!card && hasMore && guard < 60) {
+      guard += 1;
+      const before = page;
+      await loadNextPage();
+      if (page === before) {
+        // A scroll-triggered load was already in flight; let it land.
+        await new Promise((resolve) => setTimeout(resolve, 80));
+      }
+      card = firstCardFor(ch);
+    }
+    if (card) scrollToCard(card);
   }
 
   azStrip?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-letter]");
-    if (!button || button.disabled) return;
-    // Clicking the active letter clears it, so the strip toggles rather than
-    // trapping you in one letter with no way back to the whole shelf.
-    const next = button.classList.contains("is-on") ? null : button.dataset.letter;
-    setParams((p) => (next ? p.set("letter", next) : p.delete("letter")));
-    azStrip.querySelectorAll("[data-letter]").forEach((el) => {
-      const on = el === button && next !== null;
-      el.classList.toggle("is-on", on);
-      el.setAttribute("aria-pressed", on ? "true" : "false");
-    });
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    if (button && !button.disabled) jumpTo(button.dataset.letter);
   });
+
+  // Highlight whichever letter you are currently among, the way Plex does, so
+  // the strip reads as a position rather than a set of buttons.
+  let spyQueued = false;
+
+  function markCurrentLetter() {
+    spyQueued = false;
+    if (!azStrip || !grid) return;
+    const edge = (topbar?.getBoundingClientRect().height || 0) + 16;
+    let current = null;
+    for (const card of grid.querySelectorAll("[data-initial]")) {
+      if (card.getBoundingClientRect().top > window.innerHeight) break;
+      if (card.getBoundingClientRect().bottom >= edge) {
+        current = card.dataset.initial;
+        break;
+      }
+    }
+    azStrip.querySelectorAll("[data-letter]").forEach((button) => {
+      button.classList.toggle("is-on", button.dataset.letter === current);
+    });
+  }
+
+  if (azStrip) {
+    const queueSpy = () => {
+      if (spyQueued) return;
+      spyQueued = true;
+      requestAnimationFrame(markCurrentLetter);
+    };
+    window.addEventListener("scroll", queueSpy, { passive: true });
+    window.addEventListener("resize", queueSpy, { passive: true });
+    markCurrentLetter();
+  }
 
   // -- detail panel ------------------------------------------------------
 

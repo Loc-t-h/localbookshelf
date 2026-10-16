@@ -26,7 +26,7 @@ from .. import __version__
 from ..config import Config
 from ..covers import cover_paths
 from ..db import Database
-from ..library import DEFAULT_SORT, SORTS, Library, order_clause
+from ..library import DEFAULT_SORT, SORTS, Library, initial_for, order_clause
 from ..scanner import Scanner
 
 HERE = Path(__file__).parent
@@ -76,6 +76,7 @@ def create_app(config: Config, db: Database, library: Library, scanner: Scanner)
     templates.env.filters["filesize"] = _filesize
     templates.env.filters["format_label"] = lambda f: FORMAT_LABELS.get(f, (f or "?").upper())
     templates.env.filters["series_index"] = _series_index
+    templates.env.filters["initial"] = initial_for
     # Stamped onto the static URLs so a browser cannot keep serving the previous
     # CSS or JavaScript against new markup. Derived from the files themselves,
     # not from __version__: during development the version rarely moves while
@@ -89,11 +90,7 @@ def create_app(config: Config, db: Database, library: Library, scanner: Scanner)
         formats = [f for f in params.getlist("format") if f in FORMAT_LABELS]
         sort = params.get("sort") if params.get("sort") in SORTS else DEFAULT_SORT
         _, direction = order_clause(sort, params.get("dir"))
-        letter = (params.get("letter") or "").strip()[:1].upper()
-        if letter and letter != "#" and not letter.isalpha():
-            letter = ""
         return {
-            "letter": letter or None,
             "query": (params.get("q") or "").strip() or None,
             "formats": formats or None,
             "author_id": _as_int(params.get("author")),
@@ -123,9 +120,11 @@ def create_app(config: Config, db: Database, library: Library, scanner: Scanner)
                 "args": args,
                 "raw_query": request.query_params,
                 "alphabet": ALPHABET,
-                # Which letters are clickable, and whether the strip shows at
-                # all -- it is meaningless on a sort that is not alphabetical.
-                "initials": library.initials(**{k: v for k, v in args.items() if k != "letter"}),
+                "initials": library.initials(**args),
+                # Jumping to a letter only makes sense while the shelf is in
+                # alphabetical order, so the strip appears on the title sort
+                # and nowhere else.
+                "show_letters": args["sort"] == "title",
                 "authors": library.authors(limit=200),
                 "series": library.series(limit=200),
                 "stats": library.stats(),
@@ -151,7 +150,7 @@ def create_app(config: Config, db: Database, library: Library, scanner: Scanner)
         # them. Appending page 2 changes nothing about that, so it is not
         # recomputed while scrolling.
         if page == 1:
-            counts = library.initials(**{k: v for k, v in args.items() if k != "letter"})
+            counts = library.initials(**args)
             headers["X-Initials"] = ",".join(f"{ch}:{n}" for ch, n in sorted(counts.items()))
         return templates.TemplateResponse(
             request,

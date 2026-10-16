@@ -283,6 +283,17 @@ main { padding: 22px 18px 40px; }
 .notice { margin-bottom: 22px; }
 .notice p { margin: 0 0 8px; }
 
+/* The way out of the review queue when the metadata is already right, so it
+   leads the section and the candidates read as the alternative. */
+.btn--confirm {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: transparent;
+  font-weight: 600;
+}
+
+.review__or { margin: 12px 0 6px; font-size: 12px; }
+
 /* -- A-Z strip ---------------------------------------------------------- */
 /* Fixed to the right edge and vertically centred, so it runs down the side of
    the screen independently of how far the shelf has scrolled. Transparent at

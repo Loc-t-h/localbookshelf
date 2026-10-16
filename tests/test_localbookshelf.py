@@ -701,3 +701,57 @@ def test_a_letter_with_no_books_is_absent_from_the_counts(shelf):
     for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
         if ch not in present:
             assert ch not in counts
+
+
+# -- settling a metadata review ----------------------------------------------
+
+
+def _uncertain_result():
+    """What a low-confidence lookup comes back with: near misses, no match."""
+    from localbookshelf.enrich import Candidate, EnrichmentResult
+
+    return EnrichmentResult(
+        matched=None,
+        candidates=[Candidate(openlibrary_id="/works/OL1W", title="Some Other Book",
+                              authors=["Someone Else"], confidence=0.41)],
+        needs_review=True,
+    )
+
+
+def test_an_uncertain_match_flags_the_book_for_review(shelf, monkeypatch):
+    from localbookshelf import scanner as scanner_module
+
+    _, _, library, scanner, _ = shelf
+    monkeypatch.setattr(scanner_module, "enrich", lambda *a, **k: _uncertain_result())
+    book = library.list_books(limit=1)[0][0]
+
+    scanner._enrich_book(object(), library.get_book(book["id"]), manual=False)
+    assert library.get_book(book["id"])["needs_review"]
+
+
+def test_a_confirmed_book_is_not_flagged_again(shelf, monkeypatch):
+    """"Keep what's here" has to survive the next lookup.
+
+    Otherwise confirming a book is pointless: the same near misses come back on
+    the next enrichment pass and put it straight back in the queue.
+    """
+    from localbookshelf import scanner as scanner_module
+
+    _, _, library, scanner, _ = shelf
+    monkeypatch.setattr(scanner_module, "enrich", lambda *a, **k: _uncertain_result())
+    book = library.list_books(limit=1)[0][0]
+
+    # What the confirm route does: keep the metadata, clear the flag, and
+    # record that a person settled it.
+    fields = scanner._fields_from_row(library.get_book(book["id"]))
+    fields.needs_review = False
+    fields.candidates = []
+    fields.match_source = "manual"
+    fields.match_confidence = 1.0
+    library.upsert(fields)
+
+    scanner._enrich_book(object(), library.get_book(book["id"]), manual=False)
+
+    after = library.get_book(book["id"])
+    assert not after["needs_review"]
+    assert after["title"] == book["title"], "confirming must not rewrite the metadata"

@@ -22,10 +22,15 @@
       <button type="button" class="btn" data-refresh="{{ book.id }}">Refresh metadata</button>
     </div>
 
-    {% if book.needs_review and book.candidates %}
+    {% if book.needs_review %}
     <section class="review">
       <h3>Is this the right book?</h3>
       <p class="muted">The online match wasn't confident enough to apply automatically.</p>
+      <button type="button" class="btn btn--confirm" data-confirm="{{ book.id }}">
+        Keep what's here
+      </button>
+      {% if book.candidates %}
+      <p class="muted review__or">…or replace it with one of these:</p>
       <ul class="candidates">
         {% for c in book.candidates %}
         <li>
@@ -37,6 +42,7 @@
         </li>
         {% endfor %}
       </ul>
+      {% endif %}
     </section>
     {% endif %}
 

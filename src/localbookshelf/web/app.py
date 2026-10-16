@@ -273,6 +273,28 @@ def create_app(config: Config, db: Database, library: Library, scanner: Scanner)
             _fetch_candidate_cover(config, db, identity, cover_id, library, book_id)
         return JSONResponse({"ok": True})
 
+    @app.post("/book/{book_id}/confirm")
+    def confirm_metadata(book_id: int):
+        """Keep the metadata as it stands and clear the review flag.
+
+        Without this the only way out of the review queue is to accept one of
+        the candidates, which is no help when the book is already right and the
+        candidates are all the wrong book.
+        """
+        book = library.get_book(book_id)
+        if not book:
+            raise HTTPException(404, "No such book")
+
+        fields = scanner._fields_from_row(book)
+        fields.needs_review = False
+        fields.candidates = []
+        # "manual" records that a person settled this, which is what keeps a
+        # later enrichment pass from raising it again.
+        fields.match_source = "manual"
+        fields.match_confidence = 1.0
+        library.upsert(fields)
+        return JSONResponse({"ok": True})
+
     @app.post("/book/{book_id}/refresh")
     def refresh(book_id: int):
         book = library.get_book(book_id)

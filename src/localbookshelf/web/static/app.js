@@ -50,6 +50,7 @@
     failed = false;
     hasMore = response.headers.get("X-Has-More") === "1";
     renderPager();
+    syncStripVisibility();
     markCurrentLetter();
   }
 
@@ -231,6 +232,15 @@
 
   const topbar = document.querySelector(".topbar");
 
+  // Changing the sort re-renders the grid over fetch, not the page, so the
+  // strip's own visibility has to be kept in step here. Reading the select
+  // rather than the URL also covers the default, where there is no sort param.
+  function syncStripVisibility() {
+    if (!azStrip) return;
+    const current = sort?.value || params().get("sort") || "added";
+    azStrip.hidden = current !== "title";
+  }
+
   function syncStrip(header) {
     if (!azStrip || header === null) return;
     const counts = new Map(
@@ -314,6 +324,7 @@
     };
     window.addEventListener("scroll", queueSpy, { passive: true });
     window.addEventListener("resize", queueSpy, { passive: true });
+    syncStripVisibility();
     markCurrentLetter();
   }
 
@@ -368,6 +379,16 @@
         if (actions) actions.style.opacity = editor.hidden ? "" : "0.5";
         if (!editor.hidden) editor.querySelector("input")?.focus();
       }
+      return;
+    }
+
+    const confirmButton = event.target.closest("[data-confirm]");
+    if (confirmButton) {
+      confirmButton.disabled = true;
+      confirmButton.textContent = "Keeping…";
+      await fetch(`/book/${confirmButton.dataset.confirm}/confirm`, { method: "POST" });
+      await openBook(confirmButton.dataset.confirm);
+      refresh();
       return;
     }
 

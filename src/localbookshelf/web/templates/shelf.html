@@ -97,9 +97,10 @@
    initial rather than filtering it. Only on the title sort: jumping to a
    letter means nothing while the shelf is ordered by date or size. The whole
    alphabet is always drawn so the strip keeps one shape as you filter --
-   letters with nothing behind them are simply not clickable. #}
-{% if show_letters %}
-<nav class="az" id="az" aria-label="Skip to letter">
+   letters with nothing behind them are simply not clickable. It is always
+   rendered and hidden when it does not apply, because the sort can change
+   without a page load and markup that is absent cannot be shown again. #}
+<nav class="az" id="az" aria-label="Skip to letter"{% if not show_letters %} hidden{% endif %}>
   {% for ch in alphabet %}
   {% set n = initials.get(ch, 0) %}
   <button type="button" class="az__letter" data-letter="{{ ch }}"
@@ -107,7 +108,6 @@
           title="{% if n %}Skip to {{ ch }} ({{ n }} book{{ '' if n == 1 else 's' }}){% else %}nothing under {{ ch }}{% endif %}">{{ ch }}</button>
   {% endfor %}
 </nav>
-{% endif %}
 
 <aside class="panel" id="panel" hidden aria-hidden="true">
   <div class="panel__inner" id="panel-content"></div>

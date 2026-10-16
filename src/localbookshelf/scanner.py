@@ -507,7 +507,13 @@ class Scanner:
             )
         if result.candidates:
             fields.candidates = [c.to_dict() for c in result.candidates]
-            fields.needs_review = result.needs_review
+            # A book whose metadata the user has already adjudicated -- by
+            # picking a candidate or by confirming what was there -- is not
+            # flagged again just because the search still turns up near
+            # misses. Re-asking a question that has been answered is how a
+            # review queue becomes noise that nobody reads.
+            if book.get("match_source") != "manual":
+                fields.needs_review = result.needs_review
 
         if result.cover_bytes and not fields.has_cover:
             if covers.store_cover(self.config.covers_dir, identity, result.cover_bytes):

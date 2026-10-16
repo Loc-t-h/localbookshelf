@@ -17,6 +17,7 @@ from .base import (
     ExtractedMetadata,
     clean_description,
     clean_text,
+    looks_like_junk_title,
     normalize_isbn,
     parse_year,
     split_authors,
@@ -69,7 +70,12 @@ def _read_metadata(root: ElementTree.Element, meta: ExtractedMetadata) -> None:
     if metadata is None:
         metadata = root  # be forgiving about missing wrappers
 
-    meta.title = clean_text(_text(metadata.find(f"{DC_NS}title")))
+    # Calibre-produced files sometimes carry an identifier in dc:title. Leaving
+    # it unset hands the job to the filename and an ISBN lookup, both of which
+    # do better than an ISBN shown as a title.
+    title = clean_text(_text(metadata.find(f"{DC_NS}title")))
+    if not looks_like_junk_title(title):
+        meta.title = title
     meta.description = clean_description(_text(metadata.find(f"{DC_NS}description")))
     meta.publisher = clean_text(_text(metadata.find(f"{DC_NS}publisher")))
     meta.language = clean_text(_text(metadata.find(f"{DC_NS}language")))

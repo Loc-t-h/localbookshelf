@@ -4,13 +4,15 @@ A bookshelf view for a folder of books. Point it at a directory, get covers and
 metadata. No reader, no library manager, no accounts.
 
 ```
-localbookshelf serve ~/Books
+echo 'LIBRARY_PATH=~/Books' > .env
+localbookshelf serve
   → http://localhost:8080
 ```
 
 **The library folder is read-only.** LocalBookshelf never renames, moves,
 rewrites, converts or deletes anything in it. All state lives in a separate data
-directory; delete it and a rescan rebuilds everything.
+directory; delete it and a rescan rebuilds everything — the library path is
+configuration, not state, so it survives that.
 
 See [localbookshelf_specs.md](localbookshelf_specs.md) for the full spec and the
 reasoning behind the scope.
@@ -21,7 +23,8 @@ Requires Python 3.11+.
 
 ```bash
 uv sync                      # or: pipx install -e .
-uv run localbookshelf serve ~/Books
+cp .env.example .env         # set LIBRARY_PATH to your books folder
+uv run localbookshelf serve
 ```
 
 Optional, for CBR comics: `brew install unar` (macOS) / `apt install unar` (Ubuntu).
@@ -29,22 +32,39 @@ Optional, for CBR comics: `brew install unar` (macOS) / `apt install unar` (Ubun
 ## Usage
 
 ```bash
-localbookshelf serve ~/Books          # index and serve (default command)
+localbookshelf serve                  # index and serve (default command)
 localbookshelf serve --host 0.0.0.0   # allow other devices on the LAN
 localbookshelf serve --offline        # no Open Library lookups
 localbookshelf serve --rescan         # re-parse every file, ignoring the cache
 
 localbookshelf scan                   # index and exit
 localbookshelf status                 # library statistics
-localbookshelf add ~/Comics           # remember another folder
-localbookshelf roots                  # list configured folders
+localbookshelf roots                  # show the configured folders
 
 localbookshelf export-overrides -o edits.json   # back up manual metadata edits
 localbookshelf import-overrides edits.json
 ```
 
-Folders passed to `serve` or `scan` are remembered, so later runs need no
-argument.
+### Where the library path comes from
+
+In precedence order:
+
+1. A path passed to `serve` or `scan` — `localbookshelf serve ~/Comics`. A
+   one-off: it overrides the configured path and is *not* remembered.
+2. `$LIBRARY_PATH` in the real environment.
+3. `LIBRARY_PATH` in the first `.env` found — the working directory, then
+   `~/.config/localbookshelf/.env`. A variable already exported wins over the
+   file.
+
+Several folders at once: separate them with `:`.
+
+```bash
+LIBRARY_PATH="~/Books:/mnt/nas/comics"
+```
+
+`localbookshelf roots` prints what is configured and where it was read from. A
+configured folder that is missing (an unplugged drive, say) is skipped with a
+warning; the shelf only refuses to start if *none* of them exist.
 
 ## Running on your network
 
@@ -76,13 +96,18 @@ docker compose up -d --build
 
 The shelf is then at `http://<server-ip>:8080`.
 
-Two things worth knowing about the compose file:
+Three things worth knowing about the compose file:
 
 - **The library is mounted read-only** (`read_only: true` on the bind mount).
   The app never writes to your books, and this makes that a guarantee the
   kernel enforces rather than a promise the code keeps.
 - **The database and cover cache live in a named volume**, not a bind mount,
   because SQLite's write-ahead log misbehaves on NFS/SMB.
+- **`LIBRARY_PATH` means two different things either side of the container
+  boundary.** On the host it is where your books are, and compose reads it as
+  the bind mount's source. Inside the container it is the mount point, which is
+  always `/library`, so compose pins it there in its `environment:` block. Set
+  the host path in `.env` and leave the pinned one alone.
 
 The image runs as UID/GID 1000, which matches the first user account on a stock
 Ubuntu install. If your books are owned by someone else, uncomment the `user:`

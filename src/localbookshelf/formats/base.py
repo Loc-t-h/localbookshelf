@@ -50,11 +50,21 @@ JUNK_TITLE_MARKERS = (
 )
 
 
+# Inline markup that leaks into metadata fields from publisher toolchains, as
+# in a PDF whose title is "<em>Emergent Tokyo</em>". Only a known tag list, so
+# a title that genuinely contains an angle bracket survives.
+INLINE_TAG_RE = re.compile(
+    r"</?(?:em|i|b|strong|span|p|br|div|u|sub|sup|small|font)\b[^>]*>",
+    re.I,
+)
+
+
 def clean_text(value: str | None, *, limit: int = 20_000) -> str | None:
-    """Collapse whitespace, normalize unicode, and drop empties."""
+    """Collapse whitespace, normalize unicode, strip stray markup, drop empties."""
     if not value:
         return None
     text = normalize_text(str(value)).replace("\x00", "")
+    text = INLINE_TAG_RE.sub(" ", text)
     text = re.sub(r"\s+", " ", text).strip()
     if not text:
         return None
@@ -98,6 +108,59 @@ def clean_description(value: str | None) -> str | None:
     return text[:20_000] or None
 
 
+# A short tag some tools glue onto the end of an identifier, as in
+# "0062407805 (N)" or "9780062407801 [ebook]".
+TRAILING_TAG_RE = re.compile(r"\s*[(\[][^)\]]{0,12}[)\]]\s*$")
+
+# Amazon's ASIN: a capital B then nine more uppercase alphanumerics. Requiring
+# digits as well keeps real ten-letter titles ("BLACKWATER") out of it.
+ASIN_RE = re.compile(r"B[0-9A-Z]{9}")
+
+
+def _is_bare_identifier(text: str) -> bool:
+    """True if the whole string is an ISBN, an ASIN or a long digit run."""
+    if not text:
+        return False
+    if ASIN_RE.fullmatch(text) and sum(c.isdigit() for c in text) >= 2:
+        return True
+    compact = re.sub(r"[-\s]", "", text)
+    if compact[-1:] in {"x", "X"}:  # an ISBN-10 check digit
+        compact = compact[:-1]
+    # Nine digits is past every plausible numeric title ("1984", "2666",
+    # "1939-1945") and still catches both ISBN-10 and ISBN-13.
+    return compact.isdigit() and len(compact) >= 9
+
+
+# "[Mount Trilogy 02] • Defiant Queen" -- a leading bracketed series tag, with
+# whatever separator the exporter chose after it.
+SERIES_PREFIX_RE = re.compile(r"^\[(?P<tag>[^\]]{1,60})\]\s*(?:[•·|:\u2013\u2014-]\s*)?")
+
+
+def strip_series_prefix(title: str | None, series: str | None = None) -> str | None:
+    """Drop a bracketed series tag that only repeats the series fields.
+
+    The shelf shows series and index on their own line, so a title carrying
+    them again is noise. Stripping is deliberately narrow: the tag has to end
+    in a number or name the series we already found, so a bracket that is part
+    of the actual title survives.
+    """
+    if not title:
+        return title
+    match = SERIES_PREFIX_RE.match(title)
+    if not match:
+        return title
+
+    tag = match.group("tag").strip()
+    names_the_series = bool(series) and tag.lower().startswith(series.strip().lower())
+    if not (names_the_series or re.search(r"\d\s*$", tag)):
+        return title
+
+    remainder = title[match.end():].strip()
+    # Never strip our way down to nothing: a title that was *only* the tag is
+    # better shown as it came than blanked.
+    return remainder if len(remainder) >= 2 else title
+
+
 def looks_like_junk_title(title: str | None) -> bool:
     """True if a title field is really an artifact of whatever produced the file.
 
@@ -120,6 +183,12 @@ def looks_like_junk_title(title: str | None) -> bool:
         return True
     # Bare hex/uuid-ish identifiers.
     if re.fullmatch(r"[0-9a-f\-]{12,}", low):
+        return True
+    # An identifier sitting where the title should be. Calibre and some shop
+    # exports write the ISBN or ASIN into the title field, and such a "title"
+    # outranks the filename -- which is usually where the real one survives --
+    # so it is genuinely worse than having no title at all.
+    if _is_bare_identifier(TRAILING_TAG_RE.sub("", title.strip()).strip()):
         return True
     return False
 

@@ -24,6 +24,7 @@ from .base import (
     clean_description,
     clean_text,
     looks_like_image,
+    looks_like_junk_title,
     normalize_isbn,
     parse_year,
     split_authors,
@@ -84,7 +85,9 @@ def extract(path: Path) -> ExtractedMetadata:
             return meta
 
         encoding = _encoding(record0)
-        meta.title = _full_name(record0, encoding)
+        full_name = _full_name(record0, encoding)
+        if not looks_like_junk_title(full_name):
+            meta.title = full_name
 
         header_length = struct.unpack_from(">I", record0, 16 + MOBI_HEADER_LENGTH)[0]
         exth_flags = _u32(record0, 16 + MOBI_EXTH_FLAGS)
@@ -164,7 +167,7 @@ def _apply_exth(
         return clean_text(values[0].decode(encoding, "replace"))
 
     updated_title = text(EXTH_UPDATED_TITLE)
-    if updated_title:
+    if updated_title and not looks_like_junk_title(updated_title):
         meta.title = updated_title
 
     for raw in exth.get(EXTH_AUTHOR, []):

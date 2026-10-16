@@ -22,6 +22,7 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from .. import __version__
 from ..config import Config
 from ..covers import cover_paths
 from ..db import Database
@@ -29,7 +30,10 @@ from ..library import DEFAULT_SORT, SORTS, Library, order_clause
 from ..scanner import Scanner
 
 HERE = Path(__file__).parent
-PAGE_SIZE = 60
+# Books per page, and so per auto-load step as you scroll. 48 divides evenly by
+# 2, 3, 4, 6 and 8, which is the range of column counts the shelf grid settles
+# on between phone and desktop widths, so a page tends to end on a full row.
+PAGE_SIZE = 48
 
 DOWNLOAD_MIMES = {
     "epub": "application/epub+zip",
@@ -60,6 +64,9 @@ def create_app(config: Config, db: Database, library: Library, scanner: Scanner)
     templates.env.filters["filesize"] = _filesize
     templates.env.filters["format_label"] = lambda f: FORMAT_LABELS.get(f, (f or "?").upper())
     templates.env.filters["series_index"] = _series_index
+    # Stamped onto the static URLs so an upgrade cannot leave a browser running
+    # last version's JavaScript against this version's markup.
+    templates.env.globals["version"] = __version__
 
     def _query_args(request: Request) -> dict:
         params = request.query_params

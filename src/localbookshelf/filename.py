@@ -15,6 +15,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from .formats.base import normalize_isbn
 from .identity import normalize_text
 
 # Release-group noise, quality tags, and format markers.
@@ -42,6 +43,15 @@ SERIES_PATTERNS = [
 
 YEAR_RE = re.compile(r"[\(\[]?\b((?:1[89]|20)\d{2})\b[\)\]]?")
 
+# An ISBN sitting in the filename, usually parenthesised as in
+# "... - Jorge Almazan (9781951541323)". Worth taking seriously: unlike a title
+# guess, an ISBN is an exact key, so the lookup it enables cannot match the
+# wrong book. Removing it also unblocks the author split, which otherwise sees
+# "Jorge Almazan (9781951541323)" and decides it is not a name.
+ISBN_IN_NAME_RE = re.compile(
+    r"[(\[]?\b(97[89][\d\-\s]{10,16}|\d[\d\-\s]{8,14}[\dXx])\b[)\]]?"
+)
+
 # A run of 2-4 capitalized words, which is what a name usually looks like.
 AUTHOR_HINT_RE = re.compile(r"^[A-Z][\w'`\-\.]*(?:\s+[A-Z][\w'`\-\.]*){1,3}$")
 
@@ -61,6 +71,7 @@ class FilenameGuess:
     series: str | None = None
     series_index: float | None = None
     year: int | None = None
+    isbn: str | None = None
 
     def __post_init__(self) -> None:
         if self.authors is None:
@@ -72,6 +83,14 @@ def guess(path: Path) -> FilenameGuess:
     result = FilenameGuess()
 
     cleaned = _strip_noise(stem)
+
+    # Before the year, so a 13-digit ISBN starting 978... is not mined for one.
+    isbn_match = ISBN_IN_NAME_RE.search(cleaned)
+    if isbn_match:
+        candidate = normalize_isbn(isbn_match.group(1))
+        if candidate:
+            result.isbn = candidate
+            cleaned = cleaned[: isbn_match.start()] + " " + cleaned[isbn_match.end():]
 
     year_match = YEAR_RE.search(cleaned)
     if year_match:

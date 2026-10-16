@@ -397,9 +397,14 @@ before it goes in:
    but two cards is simpler and could ship first.*
 2. **Series-first shelving.** Should a 14-book series collapse into one shelf
    tile? Plex does this for seasons. *Leaning: flat in v1, revisit in M7.*
-3. **Where the scan root lives.** CLI argument only, or a settings screen that
-   can add/remove roots? *Leaning: CLI argument to start, persisted to the DB so
-   later runs need no argument.*
+3. ~~**Where the scan root lives.**~~ **Resolved 2026-10-16:** `$LIBRARY_PATH`,
+   from the environment or a `.env`, with a CLI argument as a one-off override.
+   The first implementation persisted roots to the DB, which was wrong on two
+   counts: it contradicted tenet 2 (the DB is a disposable cache, yet deleting
+   the data directory lost your library path), and a path passed to `serve` was
+   silently remembered forever, so there was no way to look at one folder
+   without permanently adopting it. `add`/`remove` are gone; `roots` is now
+   read-only. Several folders separate with `:`.
 4. **Author name normalization.** "Dan Simmons" vs "Simmons, Dan" vs "SIMMONS,
    DAN" will fragment the author filter. Needs at least a normalization pass;
    full author identity resolution is a rabbit hole.

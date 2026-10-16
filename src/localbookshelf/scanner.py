@@ -26,7 +26,11 @@ from .config import IGNORED_DIR_NAMES, Config
 from .db import Database
 from .enrich import OpenLibraryClient, enrich
 from .filename import guess as guess_from_filename
-from .formats.base import ExtractedMetadata
+from .formats.base import (
+    ExtractedMetadata,
+    looks_like_junk_title,
+    strip_series_prefix,
+)
 from .identity import file_identity, normalize_text
 from .library import BookFields, Library
 
@@ -313,6 +317,15 @@ class Scanner:
         series = meta.series or guess.series
         series_index = meta.series_index if meta.series_index is not None else guess.series_index
         year = meta.published_year or guess.year
+        # An ISBN from the filename is an exact key, so it is a safe fallback
+        # when the file itself carries none: it is what lets an otherwise
+        # metadata-free PDF be looked up at all.
+        isbn = meta.isbn or guess.isbn
+
+        # The series and its index get their own line on the shelf, so a title
+        # that repeats them as a bracketed prefix is pure duplication:
+        # "[Mount Trilogy 02] • Defiant Queen" shelves as "Defiant Queen".
+        title = strip_series_prefix(title, series)
 
         source = "embedded" if meta.title else "filename"
 
@@ -327,7 +340,7 @@ class Scanner:
             description=meta.description,
             publisher=meta.publisher,
             published_year=year,
-            isbn=meta.isbn,
+            isbn=isbn,
             language=meta.language,
             series=series,
             series_index=series_index,
@@ -355,10 +368,17 @@ class Scanner:
         fields.published_year = fields.published_year or previous["published_year"]
         fields.isbn = fields.isbn or previous["isbn"]
 
-        # The file gave us no title of its own, so the matched one still stands.
-        if fields.match_source == "filename" and previous["match_source"] in (
-            "openlibrary",
-            "manual",
+        # The file gave us no title of its own, so the matched one still stands
+        # -- unless it is a title we would now reject outright, such as an ISBN
+        # a previous scan took from dc:title before the junk checks recognised
+        # that shape. Restoring it would also restore its match source, and
+        # that is what makes such a title permanent: an "openlibrary" source
+        # stops the next lookup from replacing it. A real manual edit is safe
+        # either way, because overrides live in their own table.
+        if (
+            fields.match_source == "filename"
+            and previous["match_source"] in ("openlibrary", "manual")
+            and not looks_like_junk_title(previous["title"])
         ):
             fields.title = previous["title"] or fields.title
             fields.match_source = previous["match_source"]

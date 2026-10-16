@@ -51,7 +51,7 @@ JUNK_TITLE_MARKERS = (
 
 
 # Inline markup that leaks into metadata fields from publisher toolchains, as
-# in a PDF whose title is "<em>Emergent Tokyo</em>". Only a known tag list, so
+# in a PDF whose title is "<em>Emergent Cities</em>". Only a known tag list, so
 # a title that genuinely contains an angle bracket survives.
 INLINE_TAG_RE = re.compile(
     r"</?(?:em|i|b|strong|span|p|br|div|u|sub|sup|small|font)\b[^>]*>",
@@ -109,7 +109,7 @@ def clean_description(value: str | None) -> str | None:
 
 
 # A short tag some tools glue onto the end of an identifier, as in
-# "0062407805 (N)" or "9780062407801 [ebook]".
+# "0123456789 (N)" or "9780123456789 [ebook]".
 TRAILING_TAG_RE = re.compile(r"\s*[(\[][^)\]]{0,12}[)\]]\s*$")
 
 # Amazon's ASIN: a capital B then nine more uppercase alphanumerics. Requiring
@@ -131,7 +131,7 @@ def _is_bare_identifier(text: str) -> bool:
     return compact.isdigit() and len(compact) >= 9
 
 
-# "[Mount Trilogy 02] • Defiant Queen" -- a leading bracketed series tag, with
+# "[Harrow Cycle 02] • Second Light" -- a leading bracketed series tag, with
 # whatever separator the exporter chose after it.
 SERIES_PREFIX_RE = re.compile(r"^\[(?P<tag>[^\]]{1,60})\]\s*(?:[•·|:\u2013\u2014-]\s*)?")
 

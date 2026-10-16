@@ -44,10 +44,10 @@ SERIES_PATTERNS = [
 YEAR_RE = re.compile(r"[\(\[]?\b((?:1[89]|20)\d{2})\b[\)\]]?")
 
 # An ISBN sitting in the filename, usually parenthesised as in
-# "... - Jorge Almazan (9781951541323)". Worth taking seriously: unlike a title
+# "... - Mara Iwasaki (9781234567897)". Worth taking seriously: unlike a title
 # guess, an ISBN is an exact key, so the lookup it enables cannot match the
 # wrong book. Removing it also unblocks the author split, which otherwise sees
-# "Jorge Almazan (9781951541323)" and decides it is not a name.
+# "Mara Iwasaki (9781234567897)" and decides it is not a name.
 ISBN_IN_NAME_RE = re.compile(
     r"[(\[]?\b(97[89][\d\-\s]{10,16}|\d[\d\-\s]{8,14}[\dXx])\b[)\]]?"
 )

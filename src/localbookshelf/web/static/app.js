@@ -8,10 +8,17 @@
   const panelContent = document.getElementById("panel-content");
   const scrim = document.getElementById("scrim");
   const loadMore = document.getElementById("load-more");
+  const sentinel = document.getElementById("load-sentinel");
   const resultCount = document.getElementById("result-count");
 
   let page = 1;
   let debounce;
+  let loading = false;
+  let autoLoad = true;
+  // Bumped whenever the filters change. A page request that lands after a
+  // newer refresh has its generation checked and is dropped, so results from
+  // an abandoned search can never be appended to the shelf you are looking at.
+  let generation = 0;
 
   // -- URL state ---------------------------------------------------------
 
@@ -30,10 +37,17 @@
 
   async function refresh() {
     page = 1;
+    generation += 1;
+    const mine = generation;
     const response = await fetch(`/books?${params().toString()}`);
-    grid.innerHTML = await response.text();
+    const html = await response.text();
+    if (mine !== generation) return;
+    grid.innerHTML = html;
     resultCount.textContent = response.headers.get("X-Total-Count") || "0";
-    loadMore.hidden = response.headers.get("X-Has-More") !== "1";
+    autoLoad = true;
+    failed = false;
+    hasMore = response.headers.get("X-Has-More") === "1";
+    renderPager();
   }
 
   // -- search ------------------------------------------------------------
@@ -113,14 +127,99 @@
     }
   });
 
-  loadMore?.addEventListener("click", async () => {
-    page += 1;
+  // -- paging ------------------------------------------------------------
+
+  // Matches the observer's rootMargin, so the explicit follow-up below and the
+  // observer agree on what "near the bottom" means.
+  const LOAD_MARGIN = 600;
+
+  // Auto-load is the normal path. The button only appears where there is no
+  // IntersectionObserver, or after a page has failed and needs a retry.
+  const AUTO = "IntersectionObserver" in window;
+
+  // Seeded from what the server rendered, before any of this hides anything.
+  let hasMore = loadMore ? !loadMore.hidden : false;
+  let failed = false;
+
+  function nearViewport(el) {
+    const rect = el.getBoundingClientRect();
+    return rect.top - LOAD_MARGIN < window.innerHeight && rect.bottom + LOAD_MARGIN > 0;
+  }
+
+  function renderPager() {
+    if (sentinel) sentinel.hidden = !(hasMore && AUTO && !failed);
+    if (!loadMore) return;
+    loadMore.hidden = !(hasMore && (!AUTO || failed));
+    loadMore.disabled = loading;
+    loadMore.textContent = loading
+      ? "Loading…"
+      : failed
+        ? "Load more — retry"
+        : "Load more";
+  }
+
+  async function loadNextPage() {
+    if (loading || !hasMore) return;
+    loading = true;
+    renderPager();
+
+    const mine = generation;
     const next = params();
-    next.set("page", String(page));
-    const response = await fetch(`/books?${next.toString()}`);
-    grid.insertAdjacentHTML("beforeend", await response.text());
-    loadMore.hidden = response.headers.get("X-Has-More") !== "1";
+    next.set("page", String(page + 1));
+    try {
+      const response = await fetch(`/books?${next.toString()}`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const html = await response.text();
+      // The filters moved on while this was in flight; drop it rather than
+      // appending books that do not match what is on screen.
+      if (mine !== generation) return;
+      // Advanced only on success, so a failed page is retried and not skipped.
+      page += 1;
+      grid.insertAdjacentHTML("beforeend", html);
+      hasMore = response.headers.get("X-Has-More") === "1";
+      // IntersectionObserver reports *changes* in intersection, not a standing
+      // state. On a tall window the sentinel can still be in view after this
+      // append, in which case no further callback ever comes and the shelf
+      // stalls -- so carry on explicitly. The timeout lets `loading` clear in
+      // the finally block below first.
+      if (autoLoad && hasMore && sentinel && nearViewport(sentinel)) {
+        setTimeout(loadNextPage, 0);
+      }
+    } catch (_) {
+      // Stop auto-loading so a persistent failure cannot spin, and surface the
+      // button as an explicit retry.
+      autoLoad = false;
+      failed = true;
+    } finally {
+      loading = false;
+      renderPager();
+    }
+  }
+
+  loadMore?.addEventListener("click", () => {
+    autoLoad = true;
+    failed = false;
+    loadNextPage();
   });
+
+  // Auto-load on reaching the bottom. The sentinel is hidden once the last page
+  // has arrived, and a hidden element never intersects, so the observer falls
+  // silent at the end of the shelf without needing to be disconnected. The
+  // margin starts the fetch a screen early, so the next row of covers is
+  // usually already there by the time you scroll to it.
+  if (sentinel && AUTO) {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (autoLoad && entries.some((entry) => entry.isIntersecting)) loadNextPage();
+      },
+      { rootMargin: `${LOAD_MARGIN}px 0px` },
+    );
+    observer.observe(sentinel);
+  }
+
+  // Takes the button out of the layout where auto-load works, and starts the
+  // spinner if the first page already reaches the bottom of the window.
+  renderPager();
 
   // -- detail panel ------------------------------------------------------
 

@@ -166,18 +166,13 @@ class Library:
     # -- roots -------------------------------------------------------------
 
     def roots(self) -> list[Path]:
-        return [Path(r["path"]) for r in self.db.query("SELECT path FROM roots ORDER BY path")]
+        """The configured library folders.
 
-    def add_root(self, path: Path) -> None:
-        with self.db.write() as conn:
-            conn.execute(
-                "INSERT OR IGNORE INTO roots (path, added_at) VALUES (?, ?)",
-                (str(path.resolve()), _now()),
-            )
-
-    def remove_root(self, path: Path) -> None:
-        with self.db.write() as conn:
-            conn.execute("DELETE FROM roots WHERE path = ?", (str(path.resolve()),))
+        Configuration, not state: these come from $LIBRARY_PATH or the command
+        line and are never written to the database, so deleting the data
+        directory costs you the cache and nothing else.
+        """
+        return sorted({root.resolve() for root in self.config.roots})
 
     # -- overrides ---------------------------------------------------------
 

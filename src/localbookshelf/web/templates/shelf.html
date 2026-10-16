@@ -68,7 +68,7 @@
   {% if not roots %}
   <div class="notice">
     <p><strong>No library folder configured.</strong></p>
-    <p>Start the server with a path, e.g. <code>localbookshelf serve ~/Books</code>, or add one with <code>localbookshelf add ~/Books</code>.</p>
+    <p>Set <code>LIBRARY_PATH</code> in your <code>.env</code>, or start the server with a path: <code>localbookshelf serve ~/Books</code>.</p>
   </div>
   {% elif total == 0 and not args.query %}
   <div class="notice">
@@ -82,6 +82,13 @@
   </div>
 
   <div class="loadmore">
+    {# The sentinel is what the observer watches, and the spinner the reader
+       sees. The button is the fallback: scripting hides it wherever auto-load
+       works, and brings it back as a retry if a page fails. #}
+    <div class="loadmore__auto" id="load-sentinel"{% if not has_more %} hidden{% endif %}>
+      <span class="spinner" aria-hidden="true"></span>
+      <span class="sr-only" role="status">Loading more books…</span>
+    </div>
     <button type="button" id="load-more" class="btn"{% if not has_more %} hidden{% endif %}>Load more</button>
   </div>
 </main>

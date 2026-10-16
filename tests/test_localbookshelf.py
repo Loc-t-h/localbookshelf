@@ -5,6 +5,7 @@ Run with: uv run pytest -q
 
 from __future__ import annotations
 
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -16,7 +17,11 @@ sys.path.insert(0, str(Path(__file__).parent))
 import make_fixtures  # noqa: E402
 
 from localbookshelf import covers, formats  # noqa: E402
-from localbookshelf.config import Config  # noqa: E402
+from localbookshelf.config import (  # noqa: E402
+    Config,
+    load_env_file,
+    roots_from_env,
+)
 from localbookshelf.db import Database  # noqa: E402
 from localbookshelf.enrich import (  # noqa: E402
     Candidate,
@@ -26,8 +31,10 @@ from localbookshelf.enrich import (  # noqa: E402
 )
 from localbookshelf.filename import guess  # noqa: E402
 from localbookshelf.formats.base import (  # noqa: E402
+    clean_text,
     clean_description,
     looks_like_junk_title,
+    strip_series_prefix,
     normalize_isbn,
     split_authors,
 )
@@ -57,7 +64,6 @@ def shelf(tmp_path, sample_library):
     config.ensure_dirs()
     db = Database(config.db_path)
     library = Library(db, config)
-    library.add_root(library_root)
     scanner = Scanner(config, db, library)
     scanner.start(block=True)
     return config, db, library, scanner, library_root
@@ -484,3 +490,151 @@ def test_override_export_and_import_round_trip(shelf):
 
     library.import_overrides(exported)
     assert library.overrides_for(book["identity_hash"])["title"] == "Kept"
+
+
+# -- library path configuration ---------------------------------------------
+
+
+def test_library_path_is_read_from_the_environment(monkeypatch, tmp_path):
+    monkeypatch.setenv("LIBRARY_PATH", str(tmp_path / "Books"))
+    assert roots_from_env() == [tmp_path / "Books"]
+
+
+def test_library_path_accepts_several_folders(monkeypatch, tmp_path):
+    monkeypatch.setenv("LIBRARY_PATH", f"{tmp_path / 'a'}:{tmp_path / 'b'}")
+    assert roots_from_env() == [tmp_path / "a", tmp_path / "b"]
+
+
+def test_library_path_expands_a_tilde(monkeypatch):
+    monkeypatch.setenv("LIBRARY_PATH", "~/Books")
+    assert roots_from_env() == [Path.home() / "Books"]
+
+
+def test_unset_library_path_yields_no_roots(monkeypatch):
+    monkeypatch.delenv("LIBRARY_PATH", raising=False)
+    assert roots_from_env() == []
+
+
+def test_env_file_is_read_but_never_beats_the_real_environment(monkeypatch, tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text('LIBRARY_PATH="/from/file"\nPORT=9999\n')
+
+    monkeypatch.setenv("LIBRARY_PATH", "/from/environment")
+    monkeypatch.delenv("PORT", raising=False)
+    assert load_env_file([env_file]) == env_file
+
+    # The exported value wins; the unset one is filled in from the file.
+    assert roots_from_env() == [Path("/from/environment")]
+    assert os.environ["PORT"] == "9999"
+
+
+def test_roots_are_not_persisted_in_the_database(shelf):
+    """The library folder is configuration; the database stays disposable."""
+    config, db, library, _, root = shelf
+    assert library.roots() == [root.resolve()]
+
+    tables = {r["name"] for r in db.query("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert "roots" not in tables
+
+    # A fresh Library over the same database, configured with nothing, sees
+    # no library at all -- proof the path came from config and not the cache.
+    assert Library(db, Config(data_dir=config.data_dir)).roots() == []
+
+
+# -- titles that are really something else -----------------------------------
+
+
+def test_an_identifier_in_the_title_field_counts_as_junk():
+    """Calibre writes the ISBN or ASIN into dc:title on some files."""
+    assert looks_like_junk_title("0062407805 (N)")   # the real case on disk
+    assert looks_like_junk_title("0062407805")
+    assert looks_like_junk_title("9780062407801")
+    assert looks_like_junk_title("978-0-06-240780-1")
+    assert looks_like_junk_title("020161622X")       # ISBN-10 check digit
+    assert looks_like_junk_title("B014DUR7L2")       # ASIN
+
+
+def test_numeric_titles_are_not_mistaken_for_identifiers():
+    """The whole point is to lose bad titles, not real ones."""
+    for title in ["1984", "2666", "1939-1945", "1Q84", "Catch-22",
+                  "2001: A Space Odyssey", "BLACKWATER"]:
+        assert not looks_like_junk_title(title), title
+
+
+def test_series_prefix_is_stripped_from_the_title():
+    assert strip_series_prefix("[Mount Trilogy 02] • Defiant Queen",
+                               "Mount Trilogy") == "Defiant Queen"
+    assert strip_series_prefix("[Discworld 5] Sourcery") == "Sourcery"
+    assert strip_series_prefix("[Book 3]: The End") == "The End"
+    # No index, but it names the series we already extracted.
+    assert strip_series_prefix("[Mount Trilogy] • Ruthless King",
+                               "Mount Trilogy") == "Ruthless King"
+
+
+def test_brackets_that_are_part_of_the_title_survive():
+    assert strip_series_prefix("[Illustrated] Dune") == "[Illustrated] Dune"
+    assert strip_series_prefix("[Vol. II] War and Peace") == "[Vol. II] War and Peace"
+    # Stripping would leave nothing, so it stays as it came.
+    assert strip_series_prefix("[Mount Trilogy 02]", "Mount Trilogy") == "[Mount Trilogy 02]"
+    assert strip_series_prefix(None) is None
+
+
+def test_epub_with_an_isbn_title_falls_back_to_the_filename(tmp_path):
+    """End to end: a bogus dc:title must not shadow the filename."""
+    import zipfile
+
+    opf = """<?xml version="1.0"?>
+    <package xmlns="http://www.idpf.org/2007/opf" version="2.0">
+      <metadata xmlns:dc="http://purl.org/dc/elements/1.1/"
+                xmlns:opf="http://www.idpf.org/2007/opf">
+        <dc:title>0062407805 (N)</dc:title>
+        <dc:creator opf:role="aut">Chris Voss</dc:creator>
+        <dc:identifier opf:scheme="ISBN">9780062407801</dc:identifier>
+      </metadata>
+    </package>"""
+    container = """<?xml version="1.0"?>
+    <container xmlns="urn:oasis:names:tc:opendocument:xmlns:container" version="1.0">
+      <rootfiles><rootfile full-path="content.opf"
+        media-type="application/oebps-package+xml"/></rootfiles>
+    </container>"""
+
+    path = tmp_path / "Never Split the Difference - Chris Voss.epub"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("META-INF/container.xml", container)
+        archive.writestr("content.opf", opf)
+
+    meta = formats.extract(path)
+    assert meta.title is None, "the ISBN must not be taken as a title"
+    assert meta.isbn == "9780062407801"
+    assert meta.authors == ["Chris Voss"]
+
+
+# -- an ISBN in the filename -------------------------------------------------
+
+
+def test_isbn_is_taken_from_the_filename():
+    """An exact key beats a title guess, so it is worth mining the name for."""
+    g = guess(Path("Emergent Tokyo Designing The Spontaneous City"
+                   " - Jorge Almazan (9781951541323).pdf"))
+    assert g.isbn == "9781951541323"
+    # Removing it also unblocks the author split, which otherwise sees
+    # "Jorge Almazan (9781951541323)" and rejects it as not a name.
+    assert g.authors == ["Jorge Almazan"]
+    assert g.title == "Emergent Tokyo Designing The Spontaneous City"
+    # ...and the 978 prefix must not be mistaken for a publication year.
+    assert g.year is None
+
+
+def test_filenames_without_an_isbn_are_unaffected():
+    assert guess(Path("Dan Simmons - Hyperion.epub")).isbn is None
+    g = guess(Path("Some Book (2019).epub"))
+    assert g.isbn is None and g.year == 2019
+
+
+def test_inline_markup_is_stripped_from_metadata_text():
+    """Publisher toolchains leak tags into PDF title fields."""
+    assert clean_text("<em>Emergent Tokyo: Designing the Spontaneous City</em>") == (
+        "Emergent Tokyo: Designing the Spontaneous City"
+    )
+    # Not a markup stripper in general: a real angle bracket stays.
+    assert clean_text("Programming <T> Generics") == "Programming <T> Generics"

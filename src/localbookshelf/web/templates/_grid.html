@@ -18,5 +18,8 @@
   {% endif %}
 </article>
 {% else %}
-<p class="empty">Nothing matches.</p>
+{# Only on the first page: an appended page that came back empty (a rescan
+   removed books mid-scroll, say) must not drop this into the middle of the
+   grid. #}
+{% if page == 1 %}<p class="empty">Nothing matches.</p>{% endif %}
 {% endfor %}

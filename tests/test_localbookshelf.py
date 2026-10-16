@@ -546,12 +546,12 @@ def test_roots_are_not_persisted_in_the_database(shelf):
 
 def test_an_identifier_in_the_title_field_counts_as_junk():
     """Calibre writes the ISBN or ASIN into dc:title on some files."""
-    assert looks_like_junk_title("0062407805 (N)")   # the real case on disk
-    assert looks_like_junk_title("0062407805")
-    assert looks_like_junk_title("9780062407801")
-    assert looks_like_junk_title("978-0-06-240780-1")
+    assert looks_like_junk_title("0123456789 (N)")   # identifier plus a tag
+    assert looks_like_junk_title("0123456789")
+    assert looks_like_junk_title("9780123456789")
+    assert looks_like_junk_title("978-0-12-345678-9")
     assert looks_like_junk_title("020161622X")       # ISBN-10 check digit
-    assert looks_like_junk_title("B014DUR7L2")       # ASIN
+    assert looks_like_junk_title("B01ABC2345")       # ASIN
 
 
 def test_numeric_titles_are_not_mistaken_for_identifiers():
@@ -562,20 +562,20 @@ def test_numeric_titles_are_not_mistaken_for_identifiers():
 
 
 def test_series_prefix_is_stripped_from_the_title():
-    assert strip_series_prefix("[Mount Trilogy 02] • Defiant Queen",
-                               "Mount Trilogy") == "Defiant Queen"
+    assert strip_series_prefix("[Harrow Cycle 02] • Second Light",
+                               "Harrow Cycle") == "Second Light"
     assert strip_series_prefix("[Discworld 5] Sourcery") == "Sourcery"
     assert strip_series_prefix("[Book 3]: The End") == "The End"
     # No index, but it names the series we already extracted.
-    assert strip_series_prefix("[Mount Trilogy] • Ruthless King",
-                               "Mount Trilogy") == "Ruthless King"
+    assert strip_series_prefix("[Harrow Cycle] • First Light",
+                               "Harrow Cycle") == "First Light"
 
 
 def test_brackets_that_are_part_of_the_title_survive():
     assert strip_series_prefix("[Illustrated] Dune") == "[Illustrated] Dune"
     assert strip_series_prefix("[Vol. II] War and Peace") == "[Vol. II] War and Peace"
     # Stripping would leave nothing, so it stays as it came.
-    assert strip_series_prefix("[Mount Trilogy 02]", "Mount Trilogy") == "[Mount Trilogy 02]"
+    assert strip_series_prefix("[Harrow Cycle 02]", "Harrow Cycle") == "[Harrow Cycle 02]"
     assert strip_series_prefix(None) is None
 
 
@@ -587,9 +587,9 @@ def test_epub_with_an_isbn_title_falls_back_to_the_filename(tmp_path):
     <package xmlns="http://www.idpf.org/2007/opf" version="2.0">
       <metadata xmlns:dc="http://purl.org/dc/elements/1.1/"
                 xmlns:opf="http://www.idpf.org/2007/opf">
-        <dc:title>0062407805 (N)</dc:title>
-        <dc:creator opf:role="aut">Chris Voss</dc:creator>
-        <dc:identifier opf:scheme="ISBN">9780062407801</dc:identifier>
+        <dc:title>0123456789 (N)</dc:title>
+        <dc:creator opf:role="aut">Dana Hale</dc:creator>
+        <dc:identifier opf:scheme="ISBN">9780123456789</dc:identifier>
       </metadata>
     </package>"""
     container = """<?xml version="1.0"?>
@@ -598,15 +598,15 @@ def test_epub_with_an_isbn_title_falls_back_to_the_filename(tmp_path):
         media-type="application/oebps-package+xml"/></rootfiles>
     </container>"""
 
-    path = tmp_path / "Never Split the Difference - Chris Voss.epub"
+    path = tmp_path / "A Field Guide to Nothing - Dana Hale.epub"
     with zipfile.ZipFile(path, "w") as archive:
         archive.writestr("META-INF/container.xml", container)
         archive.writestr("content.opf", opf)
 
     meta = formats.extract(path)
     assert meta.title is None, "the ISBN must not be taken as a title"
-    assert meta.isbn == "9780062407801"
-    assert meta.authors == ["Chris Voss"]
+    assert meta.isbn == "9780123456789"
+    assert meta.authors == ["Dana Hale"]
 
 
 # -- an ISBN in the filename -------------------------------------------------
@@ -614,13 +614,13 @@ def test_epub_with_an_isbn_title_falls_back_to_the_filename(tmp_path):
 
 def test_isbn_is_taken_from_the_filename():
     """An exact key beats a title guess, so it is worth mining the name for."""
-    g = guess(Path("Emergent Tokyo Designing The Spontaneous City"
-                   " - Jorge Almazan (9781951541323).pdf"))
-    assert g.isbn == "9781951541323"
+    g = guess(Path("Emergent Cities A Field Study"
+                   " - Mara Iwasaki (9781234567897).pdf"))
+    assert g.isbn == "9781234567897"
     # Removing it also unblocks the author split, which otherwise sees
-    # "Jorge Almazan (9781951541323)" and rejects it as not a name.
-    assert g.authors == ["Jorge Almazan"]
-    assert g.title == "Emergent Tokyo Designing The Spontaneous City"
+    # "Mara Iwasaki (9781234567897)" and rejects it as not a name.
+    assert g.authors == ["Mara Iwasaki"]
+    assert g.title == "Emergent Cities A Field Study"
     # ...and the 978 prefix must not be mistaken for a publication year.
     assert g.year is None
 
@@ -633,8 +633,8 @@ def test_filenames_without_an_isbn_are_unaffected():
 
 def test_inline_markup_is_stripped_from_metadata_text():
     """Publisher toolchains leak tags into PDF title fields."""
-    assert clean_text("<em>Emergent Tokyo: Designing the Spontaneous City</em>") == (
-        "Emergent Tokyo: Designing the Spontaneous City"
+    assert clean_text("<em>Emergent Cities: A Field Study</em>") == (
+        "Emergent Cities: A Field Study"
     )
     # Not a markup stripper in general: a real angle bracket stays.
     assert clean_text("Programming <T> Generics") == "Programming <T> Generics"

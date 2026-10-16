@@ -324,7 +324,7 @@ class Scanner:
 
         # The series and its index get their own line on the shelf, so a title
         # that repeats them as a bracketed prefix is pure duplication:
-        # "[Mount Trilogy 02] • Defiant Queen" shelves as "Defiant Queen".
+        # "[Harrow Cycle 02] • Second Light" shelves as "Second Light".
         title = strip_series_prefix(title, series)
 
         source = "embedded" if meta.title else "filename"

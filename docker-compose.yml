@@ -28,6 +28,11 @@ services:
 
     environment:
       TZ: "${TZ:-Etc/UTC}"
+      # LIBRARY_PATH means two different things either side of this boundary.
+      # On the host it is where your books are, and is read above as the bind
+      # mount's source. In here it is the mount point, which is always
+      # /library regardless of the host path. Hence the hardcoded value.
+      LIBRARY_PATH: /library
 
     # The image runs as UID/GID 1000. If your books are owned by a different
     # user, uncomment this and run `docker compose down -v` first, because the

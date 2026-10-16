@@ -47,5 +47,7 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD python -c "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=4).status == 200 else 1)"
 
+# No library path here: it comes from $LIBRARY_PATH, which compose pins to
+# /library (the mount point) rather than the host path of the same name.
 ENTRYPOINT ["localbookshelf", "--data-dir", "/data"]
-CMD ["serve", "/library", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["serve", "--host", "0.0.0.0", "--port", "8080"]

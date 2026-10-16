@@ -9,6 +9,11 @@ from pathlib import Path
 
 APP_NAME = "localbookshelf"
 
+# The library folder is configuration, not state, so it is read from the
+# environment rather than stored in the database. The database stays a
+# disposable cache: delete the data directory and only the cache is lost.
+LIBRARY_PATH_VAR = "LIBRARY_PATH"
+
 # Extensions we will attempt to open. Anything else in the library is ignored.
 SUPPORTED_EXTENSIONS = {
     ".epub": "epub",
@@ -30,6 +35,44 @@ IGNORED_DIR_NAMES = {
     "__MACOSX",
     "lost+found",
 }
+
+
+def env_file_candidates() -> list[Path]:
+    """Where we look for a .env, nearest first.
+
+    The working directory comes first so a repo checkout's .env wins during
+    development; the user config directory is what a globally installed CLI
+    falls back on.
+    """
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    config_home = Path(xdg) if xdg else Path.home() / ".config"
+    return [Path.cwd() / ".env", config_home / APP_NAME / ".env"]
+
+
+def load_env_file(candidates: list[Path] | None = None) -> Path | None:
+    """Populate os.environ from the first .env that exists.
+
+    Variables already set in the real environment win, which is what makes
+    `LIBRARY_PATH=/other localbookshelf serve` and compose's `environment:`
+    block override the file instead of fighting it.
+    """
+    from dotenv import load_dotenv
+
+    for path in candidates if candidates is not None else env_file_candidates():
+        if path.is_file():
+            load_dotenv(path, override=False)
+            return path
+    return None
+
+
+def roots_from_env() -> list[Path]:
+    """Library folders from $LIBRARY_PATH, separated by os.pathsep (":")."""
+    raw = os.environ.get(LIBRARY_PATH_VAR, "")
+    return [
+        Path(part.strip()).expanduser()
+        for part in raw.split(os.pathsep)
+        if part.strip()
+    ]
 
 
 def default_data_dir() -> Path:

@@ -14,7 +14,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS books (
@@ -104,12 +104,6 @@ CREATE TABLE IF NOT EXISTS scan_runs (
     errors        INTEGER NOT NULL DEFAULT 0
 );
 
--- Scan roots persist so `localbookshelf serve` needs no argument after setup.
-CREATE TABLE IF NOT EXISTS roots (
-    path     TEXT PRIMARY KEY,
-    added_at TEXT NOT NULL
-);
-
 -- Cached Open Library responses, so a rescan of an unchanged library makes
 -- zero network requests.
 CREATE TABLE IF NOT EXISTS http_cache (
@@ -150,6 +144,9 @@ class Database:
     def _initialize(self) -> None:
         conn = self.conn
         conn.executescript(SCHEMA)
+        # v1 kept the library folders here. They are configuration now, read
+        # from $LIBRARY_PATH, so the table is dead weight in older databases.
+        conn.execute("DROP TABLE IF EXISTS roots")
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         conn.commit()
 
